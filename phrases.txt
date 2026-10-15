@@ -1,0 +1,7 @@
+# One phrase per line. Speak with :1, :2, etc. Lines starting with # are ignored.
+Hi! I just had throat surgery and can't talk for a while, so I'm using text to speech.
+Yes.
+No.
+Thank you!
+Give me a second to type.
+Could you repeat that?
