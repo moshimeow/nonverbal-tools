@@ -1,0 +1,8 @@
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - mlx-audio==0.5.9
+      - misaki[en]==0.9.4
+      - numpy
+      - sounddevice

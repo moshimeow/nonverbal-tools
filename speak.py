@@ -15,10 +15,6 @@ import os
 import readline  # noqa: F401  (arrow keys + history in input())
 import sys
 
-import numpy as np
-import sounddevice as sd
-from mlx_audio.tts.utils import load_model
-
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 p = argparse.ArgumentParser(description="Type-to-speak with Kokoro")
@@ -30,6 +26,8 @@ p.add_argument("--device", help="output device name or part of it (e.g. 'BlackHo
 p.add_argument("--phrases", default=os.path.join(HERE, "phrases.txt"))
 p.add_argument("--list-devices", action="store_true", help="print audio devices and exit")
 args = p.parse_args()
+
+import sounddevice as sd
 
 if args.list_devices:
     print(sd.query_devices())
@@ -47,6 +45,15 @@ phrases = []
 if os.path.exists(args.phrases):
     with open(args.phrases) as f:
         phrases = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+
+if sys.version_info >= (3, 13):
+    sys.exit(
+        "Kokoro's Misaki dependency requires Python 3.12 or earlier.\n"
+        "Run ./speak.sh, or activate the project environment: conda activate ./.conda"
+    )
+
+import numpy as np
+from mlx_audio.tts.utils import load_model
 
 print("Loading Kokoro...", flush=True)
 model = load_model(args.model)
