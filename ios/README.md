@@ -62,8 +62,8 @@ the complete transcript in chronological order. The list shows newest first and
 loads 100 rows at a time. Switching tabs keeps the unsent draft intact.
 
 On iPhone, the native session uses `playAndRecord`, `defaultToSpeaker`, and an
-explicit speaker override before playback. Route-change notifications reapply
-that override when accessories connect. No input stream is opened or microphone
+speaker override when needed before playback. If the output changes away from
+the speaker during speech, playback stops with a visible error. No input stream is opened or microphone
 audio captured; Apple's speaker override requires this session category. Bluetooth
 and AirPlay routing options are not enabled. System interruptions can still stop
 speech; this is not a background-audio or phone-call override.
@@ -189,3 +189,42 @@ cargo test --locked --manifest-path ios/Cargo.toml --lib
 # Launch desktop with an isolated SPEAK_DATA_DIR before running this UI test:
 osascript ios/scripts/write-smoke.applescript
 ```
+
+### Music pause and resume
+
+Speech uses a non-mixing audio session: other audio pauses while Speak Pocket
+speaks on the iPhone speaker. Once the queue empties, the session deactivates with
+`notifyOthersOnDeactivation`, allowing the music app to resume on its own route.
+Resumption ultimately depends on the other app. The session stays active between
+queued messages, including while the next message finishes generating, to avoid
+repeated pause/resume transitions.
+
+Rust owns synthesis and the queue. A dedicated native audio thread owns the
+AVAudioEngine and audio session. Starting playback returns a ticket immediately;
+“Preparing audio…” changes to “Speaking…” once native playback starts. Removing a
+message during setup flags it for cancellation without blocking typing or queue
+operations. Completion callbacks and a duration-plus-three-seconds watchdog
+report playback success or failure. Desktop playback continues to use Rodio.
+
+Session release failures retain the active state, appear in the UI, and get up to
+three delayed retries. Interrupted or failed speech is not added to the completed
+replay cards. A later message can attempt activation again.
+
+The earlier mixing and dualRoute experiments are preserved on
+`backup/dualroute-experiment`. The dualRoute version played audibly in user testing
+but paused and resumed music anyway. This implementation removes its channel
+mapping, dynamic symbol lookup, diagnostic launch flags, and iOS 26.2 requirement.
+
+On-device acceptance check for this simplified implementation:
+
+1. Play music through AirPods and send “woof!”. Confirm speech uses the phone
+   speaker, music pauses, and music resumes through AirPods afterward.
+2. Queue several messages. Confirm music stays paused between them and resumes
+   after the last one.
+3. Remove a message during preparation and during playback. Check that typing
+   stays responsive and music resumes once no speech remains queued.
+4. Repeat without headphones, then with AirPods disconnected/reconnected.
+
+Builds and desktop tests do not establish iPhone routing behavior. After the
+simplified implementation was installed, the user confirmed that it worked on
+their iPhone and approved merging it on 2026-10-25.

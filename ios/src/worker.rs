@@ -1,5 +1,5 @@
+use crate::output::{self, Output, Playback, PlaybackState};
 use crate::{Audio, SpeechEngine, Voice, model_dir};
-use rodio::{OutputStream, Sink, buffer::SamplesBuffer};
 use std::{
     collections::VecDeque,
     sync::{
@@ -16,6 +16,7 @@ pub enum Phase {
     Waiting,
     Generating,
     Ready,
+    Starting,
     Playing,
     Failed(String),
 }
@@ -25,6 +26,7 @@ impl Phase {
             Self::Waiting => "Queued",
             Self::Generating => "Making speech…",
             Self::Ready => "Ready",
+            Self::Starting => "Preparing audio…",
             Self::Playing => "Speaking…",
             Self::Failed(e) => e,
         }
@@ -44,6 +46,7 @@ pub struct Snapshot {
     pub recent: Vec<Item>,
     pub history: Arc<Vec<crate::history::SentMessage>>,
     pub history_error: Option<String>,
+    pub audio_error: Option<String>,
 }
 struct Entry {
     item: Item,
@@ -109,6 +112,32 @@ impl Queue {
         self.generating = Some(entry.item.id);
         Some(entry.item.clone())
     }
+    fn has_speech_work(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|e| !matches!(e.item.phase, Phase::Failed(_)))
+    }
+    fn playback_state(&mut self, id: u64, state: anyhow::Result<PlaybackState>) -> bool {
+        match state {
+            Ok(PlaybackState::Starting) => false,
+            Ok(PlaybackState::Playing) => {
+                if let Some(entry) = self.entries.iter_mut().find(|e| e.item.id == id) {
+                    entry.item.phase = Phase::Playing;
+                }
+                false
+            }
+            Ok(PlaybackState::Finished) => {
+                self.finish(id);
+                true
+            }
+            Err(e) => {
+                if let Some(entry) = self.entries.iter_mut().find(|e| e.item.id == id) {
+                    entry.item.phase = Phase::Failed(format!("Audio output: {e:#}"));
+                }
+                true
+            }
+        }
+    }
     fn next_playback(&mut self) -> Option<(u64, Audio)> {
         let entry = self
             .entries
@@ -118,7 +147,7 @@ impl Queue {
             return None;
         }
         let audio = entry.audio.take()?;
-        entry.item.phase = Phase::Playing;
+        entry.item.phase = Phase::Starting;
         Some((entry.item.id, audio))
     }
 }
@@ -206,8 +235,9 @@ impl Speaker {
                 .map(|e| format!("History unavailable: {e:#}"));
             let mut history = history_result.ok();
             let mut output = None;
-            let mut playing: Option<(u64, Sink)> = None;
+            let mut playing: Option<(u64, Playback)> = None;
             let mut last = Snapshot::default();
+            let mut queue_pending = false;
             loop {
                 match rx.recv_timeout(Duration::from_millis(15)) {
                     Ok(Request::Enqueue(item)) => {
@@ -261,21 +291,26 @@ impl Speaker {
                     Ok(Request::Shutdown) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                 }
-                if playing.as_ref().is_some_and(|(_, sink)| sink.empty()) {
-                    let (id, _) = playing.take().unwrap();
-                    queue.finish(id);
+                if let Some((id, sink)) = &playing
+                    && queue.playback_state(*id, sink.state())
+                {
+                    playing.take();
+                }
+                // Keep music paused across queued/generated messages, but never
+                // activate the native session until actual audio is ready.
+                let pending = queue.has_speech_work();
+                if pending != queue_pending {
+                    queue_pending = pending;
+                    output::set_queue_pending(pending);
                 }
                 if playing.is_none()
                     && let Some((id, audio)) = queue.next_playback()
                 {
-                    let result = (|| -> anyhow::Result<Sink> {
-                        configure_audio()?;
+                    let result = (|| -> anyhow::Result<Playback> {
                         if output.is_none() {
-                            output = Some(OutputStream::try_default()?);
+                            output = Some(Output::new()?);
                         }
-                        let sink = Sink::try_new(&output.as_ref().unwrap().1)?;
-                        sink.append(SamplesBuffer::new(1, audio.sample_rate, audio.samples));
-                        Ok(sink)
+                        output.as_ref().unwrap().play(audio)
                     })();
                     match result {
                         Ok(sink) => playing = Some((id, sink)),
@@ -299,6 +334,7 @@ impl Speaker {
                     snapshot.history = store.entries.clone();
                 }
                 snapshot.history_error = history_error.clone();
+                snapshot.audio_error = output::session_error();
                 if snapshot != last {
                     if events.send(snapshot.clone()).is_err() {
                         break;
@@ -306,6 +342,7 @@ impl Speaker {
                     last = snapshot;
                 }
             }
+            output::set_queue_pending(false);
             generation.store(0, Ordering::SeqCst);
             if let Some((_, sink)) = playing {
                 sink.stop();
@@ -347,23 +384,6 @@ impl Speaker {
     pub fn remove(&self, id: u64) {
         let _ = self.0.tx.send(Request::Remove(id));
     }
-}
-
-#[cfg(target_os = "ios")]
-fn configure_audio() -> anyhow::Result<()> {
-    unsafe extern "C" {
-        fn speak_configure_audio() -> bool;
-    }
-    if unsafe { speak_configure_audio() } {
-        Ok(())
-    } else {
-        anyhow::bail!("Could not route speech to the iPhone speaker")
-    }
-}
-
-#[cfg(not(target_os = "ios"))]
-fn configure_audio() -> anyhow::Result<()> {
-    Ok(())
 }
 
 #[cfg(test)]
@@ -432,6 +452,36 @@ mod tests {
         drop(speaker);
         drop(db);
         let _ = std::fs::remove_file(path);
+    }
+    #[test]
+    fn session_stays_pending_between_messages_and_releases_after_failure_or_cancel() {
+        let mut q = Queue::default();
+        q.enqueue(item(1));
+        q.enqueue(item(2));
+        assert!(q.has_speech_work());
+        q.next_generation();
+        q.generated(1, audio());
+        q.next_playback();
+        assert_eq!(q.entries[0].item.phase, Phase::Starting);
+        assert!(!q.playback_state(1, Ok(PlaybackState::Starting)));
+        assert!(!q.playback_state(1, Ok(PlaybackState::Playing)));
+        assert_eq!(q.entries[0].item.phase, Phase::Playing);
+        assert!(q.playback_state(1, Ok(PlaybackState::Finished)));
+        assert!(q.has_speech_work()); // Keep music paused while the next item generates.
+        q.next_generation();
+        q.generated(2, audio());
+        q.next_playback();
+        assert!(q.playback_state(2, Err(anyhow::anyhow!("Output lost"))));
+        assert!(!q.has_speech_work()); // Failed rows must not hold the audio session.
+        assert_eq!(q.recent.iter().map(|i| i.id).collect::<Vec<_>>(), [1]);
+        q.enqueue(item(3));
+        q.next_generation();
+        q.generated(3, audio());
+        q.next_playback();
+        q.remove(3); // Cancel while native setup is still pending.
+        assert!(!q.has_speech_work());
+        q.playback_state(3, Ok(PlaybackState::Finished)); // Late completion cannot resurrect it.
+        assert_eq!(q.recent.iter().map(|i| i.id).collect::<Vec<_>>(), [1]);
     }
     #[test]
     fn fifo_prefetch_and_recent_history() {

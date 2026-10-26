@@ -1,3 +1,4 @@
+pub mod output;
 use anyhow::{Context, Result, bail};
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsKokoroModelConfig,

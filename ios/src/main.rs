@@ -106,7 +106,7 @@ fn QueueRow(item: Item, onremove: EventHandler<u64>) -> Element {
     let mut start = use_signal(|| None::<(f64, f64)>);
     let mut offset = use_signal(|| 0.0f64);
     let id = item.id;
-    let playing = item.phase == Phase::Playing;
+    let playing = matches!(item.phase, Phase::Playing | Phase::Starting);
     let failed = matches!(item.phase, Phase::Failed(_));
     rsx! {
         div { class: "swipe-row",
@@ -217,6 +217,7 @@ fn App() -> Element {
                     }
                 }
             }
+            if let Some(message) = state().audio_error { p { class: "error", role: "alert", "{message}" } }
             if let Some(message) = state().history_error { p { class: "error", role: "alert", "{message}" } }
             if tab() == 2 {
                 section { id: "history-view", aria_label: "History", class: "history",
