@@ -4,11 +4,16 @@ Offline type-to-speak for iPhone, with a Rust/Dioxus UI and a Rust speech worker
 calling sherpa-onnx. Emma speaks British English; Xiaoxiao speaks Mandarin.
 The existing Python/MLX CLI remains available at the workspace root.
 
-The UI includes Speak, Stop, Repeat, speed control, and four phrase buttons per
-language. Select the voice for the text you are entering. Nothing is sent to a
-server. Dioxus renders the Rust UI in the platform WebView; inference and audio
-playback are native. A small Objective-C function configures the iOS playback
-audio session so speech works with the silent switch enabled.
+Play sends the draft to the bottom of a FIFO queue and clears the composer.
+Swipe any queue row left to stop/remove it; the × button does the same thing.
+The two most recently completed messages stay above the queue. Tap one to add a
+new copy at the bottom, keeping its original voice and speed. Open ☰ for language,
+voice, and speed settings. Settings apply to newly sent messages.
+
+Nothing is sent to a server. Dioxus renders the Rust UI in the platform WebView;
+inference and audio playback are native. English uses a Misaki-style Rust
+phonemizer with an embedded neural fallback for names, typos, and invented words.
+Mandarin uses the bilingual model's Chinese lexicon and number normalization.
 
 ## Development
 
@@ -25,21 +30,31 @@ Rust, and Python 3 (used only by the bundle-staging helper):
 The local Dioxus executable is `.tools/dioxus/dx`. Use the wrapper because `dx`
 elsewhere on this Mac belongs to Deno. Cargo.lock is committed. The setup script
 verifies the CLI/model archive hashes; model downloads and build products are
-ignored by Git. The resulting offline app is roughly 189 MB.
+ignored by Git. The resulting offline app is roughly 211 MB.
 
 ```sh
 cargo test --manifest-path ios/Cargo.toml --release --lib
 cargo clippy --manifest-path ios/Cargo.toml --release --all-targets -- -D warnings
 cargo fmt --manifest-path ios/Cargo.toml --check
+# Real audio, including overlap and cancellation (speaks on the Mac):
+cargo run --manifest-path ios/Cargo.toml --release --bin queue-check
 # With the desktop app running and Accessibility permission granted:
 osascript ios/scripts/ui-smoke.applescript
 ```
 
-The native engine runs on one dedicated worker thread and remains loaded between
-requests. Stop immediately invalidates pending results and stops playback; an
-in-progress inference can only cancel at the engine's callback boundaries.
-New speech replaces the previous request. Generation finishes before playback
-in this first prototype. The text box remains editable while speech is running.
+A dedicated synthesis thread owns the model and phonemizer. A separate playback
+thread handles the queue and audio output, preparing at most one item ahead of
+the current message. Removing a playing item stops its sink promptly; removing a
+generating item invalidates its result and requests cancellation at the next
+inference callback. Failed rows remain removable and do not block later messages.
+History contains completed messages only. The queue and history are in memory.
+
+On iPhone, the native session uses `playAndRecord`, `defaultToSpeaker`, and an
+explicit speaker override before playback. Route-change notifications reapply
+that override when accessories connect. No input stream is opened or microphone
+audio captured; Apple's speaker override requires this session category. Bluetooth
+and AirPlay routing options are not enabled. System interruptions can still stop
+speech; this is not a background-audio or phone-call override.
 
 ## Install on your iPhone
 
@@ -79,23 +94,23 @@ For a personal development team, iOS may require trusting the developer under
 
 ## Validation and current limits
 
-Verified on the development Mac: real English and Chinese generation/playback,
-finite non-silent 24 kHz output, Rust input-validation tests, Clippy, desktop UI
-typing without dropped characters, phrase selection, Repeat, Stop during playback
-and generation, speed control, empty-input handling, arm64 iOS compilation, and
-signed Xcode packaging, signature verification, and installation on an iPhone 15
-Pro Max. First launch is awaiting developer trust on the phone. The initial speech
-check generated 3.27 seconds of English in 3.45 seconds and 4.31 seconds of
-Mandarin in 4.65 seconds; these are Mac observations, not iPhone benchmarks.
+Verified on the development Mac: English, invented-word and Mandarin synthesis
+and playback; FIFO queue order; generation overlapping playback; responsive
+current-item cancellation; removal without replaying stale audio; two-item
+history; Rust tests and Clippy. The updated UI was inspected at phone width and
+send/clear/queue insertion were exercised. The full UI smoke script requires an
+empty composer and refuses to overwrite an existing draft.
 
-**Physical iPhone playback is not yet verified.** Phone-specific checks still needed: Chinese keyboard
-composition, audio interruptions/headphone routing, background/foreground
-transitions, and cold/warm synthesis latency.
+The previous iPhone build's playback was confirmed by the user. The queue update
+was built, signed, installed and launched on their iPhone 15 Pro Max. The speaker
+override compiles for iPhone; connected-AirPods routing and mid-sentence accessory
+changes still need a physical test. Chinese keyboard composition, interruptions,
+background/foreground transitions and phone synthesis latency need more testing.
 
-This is a foreground prototype: no background-audio entitlement, custom saved
-phrases, persistent settings, phrase-audio cache, or App Store packaging yet.
-The sherpa lexicon frontend differs from Python Misaki; compare pronunciation
-of names, uncommon words, and mixed-language text before relying on it daily.
+This remains a foreground prototype: no saved phrases, persistent settings,
+phrase-audio cache, or App Store packaging. Unfamiliar-word pronunciations are
+best effort. English and Mandarin have separate frontends; mixed-language text
+is not automatically language-detected.
 
 ## Dependencies and model provenance
 
@@ -109,3 +124,9 @@ of names, uncommon words, and mixed-language text before relying on it daily.
 - Rodio/CPAL handle native playback. The model's license is copied into the app
   alongside its weights. Model/framework versions and voice mappings are coupled;
   do not swap a v1.1 voice pack into this v1.0 configuration.
+
+- [loqui-g2p 0.4.0](https://github.com/Awakened-Labs/loqui): British Misaki-style
+  English phonemization with embedded neural out-of-vocabulary prediction. Its
+  license and notices are bundled in `licenses/loqui-g2p/` inside the app.
+- [Apple speaker override](https://developer.apple.com/documentation/avfaudio/avaudiosession/overrideoutputaudioport(_:)):
+  native speaker routing, reapplied after route changes.

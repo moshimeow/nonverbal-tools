@@ -9,6 +9,10 @@ fn main() -> anyhow::Result<()> {
             "Hello! One moment please, I'm typing my reply.",
         ),
         (
+            Voice::Emma,
+            "Henlo! This blorptastic floof wants to zorbulate.",
+        ),
+        (
             Voice::Xiaoxiao,
             "你好！我现在可以用中文说话了。现在是下午三点。",
         ),

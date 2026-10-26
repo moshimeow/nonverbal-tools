@@ -1,79 +1,71 @@
--- Run with the desktop prototype open: osascript ios/scripts/ui-smoke.applescript
--- Uses Accessibility permission, speaks short phrases, and edits only this app.
-on waitUntilReady(root)
+-- Run with the desktop app open. Speaks samples and edits only its composer.
+-- Refuse to type unless both the app and its text field have keyboard focus.
+on sendText(message)
  tell application "System Events"
-  repeat 100 times
+  tell process "speak-pocket"
+   set frontmost to true
+   delay 0.15
+   set root to group 1 of UI element 1 of scroll area 1 of group 1 of group 1 of window 1
+   click text area "Message" of root
+   if value of text area "Message" of root is not "" then error "Composer contains a draft; refusing to overwrite it"
+   if not frontmost then error "App lost focus; refusing to type"
+   if not (value of attribute "AXFocused" of text area "Message" of root) then error "Composer is not focused"
+   keystroke message
    delay 0.2
-   set message to value of static text 1 of group 3 of root
-   if message is "Ready" then return
-   if message is not in {"Making speech…", "Loading voice model…", "Speaking…"} then error "Unexpected speech status: " & message
-  end repeat
+   if value of text area "Message" of root is not message then error "Typed text mismatch"
+   click button "▶ Play" of root
+   delay 0.25
+   if value of text area "Message" of root is not "" then error "Send did not clear composer"
+  end tell
  end tell
- error "Speech did not finish within 20 seconds"
-end waitUntilReady
-
+end sendText
+on waitEmpty()
+ tell application "System Events"
+  tell process "speak-pocket"
+   set root to group 1 of UI element 1 of scroll area 1 of group 1 of group 1 of window 1
+   repeat 300 times
+    if (count of groups of group "Speech queue" of root) is 0 then return
+    delay 0.2
+   end repeat
+  end tell
+ end tell
+ error "Queue did not drain"
+end waitEmpty
+my waitEmpty()
 tell application "System Events"
  tell process "speak-pocket"
-  set frontmost to true
-  set size of window 1 to {430, 900}
+  set size of window 1 to {430, 850}
   set root to group 1 of UI element 1 of scroll area 1 of group 1 of group 1 of window 1
-  click checkbox "Emma British English" of group "Voice" of root
-  click text area 1 of root
-  keystroke "a" using command down
-  keystroke "Hello! This is a test of the Rust app."
-  delay 0.2
-  if value of text area 1 of root is not "Hello! This is a test of the Rust app." then error "Typing did not update the message"
-  if not enabled of button "Speak" of root then error "Speak did not enable after typing"
-  click button "Speak" of root
+  if exists group "Speech settings" of root then click button "Language and voice settings" of group 1 of root
  end tell
 end tell
-my waitUntilReady(root)
+my sendText("Henlo! This blorptastic floof wants to zorbulate.")
+my sendText("Second queued sentence.")
+my sendText("Remove this queued sentence.")
 tell application "System Events"
  tell process "speak-pocket"
-  -- Stop during playback.
-  click button "Repeat" of root
-  repeat 100 times
-   delay 0.1
-   if value of static text 1 of group 3 of root is "Speaking…" then exit repeat
-  end repeat
-  if value of static text 1 of group 3 of root is not "Speaking…" then error "Repeat did not begin playback"
-  click button "Stop" of root
-  delay 0.2
-  if value of static text 1 of group 3 of root is not "Stopped" then error "Stop failed during playback"
-  -- Stop during synthesis; stale worker events must not overwrite Stopped.
-  click button "Repeat" of root
-  delay 0.1
-  click button "Stop" of root
-  delay 5
-  if value of static text 1 of group 3 of root is not "Stopped" then error "A canceled request overwrote the Stop state"
-  -- Exercise the speed input through its native accessibility action.
-  set oldSpeed to value of slider "Speed" of root
-  perform action "AXIncrement" of slider "Speed" of root
-  delay 0.2
-  if (value of slider "Speed" of root as real) ≤ (oldSpeed as real) then error "Speed slider did not update"
-  perform action "AXDecrement" of slider "Speed" of root
-  click checkbox "晓晓 普通话 · Mandarin" of group "Voice" of root
-  click button "请稍等，我正在打字。" of root
+  if (count of groups of group "Speech queue" of root) < 2 then error "Sending replaced an existing message"
+  set lastRow to last group of group "Speech queue" of root
+  click button "Remove this message" of lastRow
  end tell
 end tell
-my waitUntilReady(root)
+my waitEmpty()
 tell application "System Events"
  tell process "speak-pocket"
-  if value of text area 1 of root is not "请稍等，我正在打字。" then error "Mandarin phrase did not populate text"
-  -- Refocus after synthesis: the user or build tools may have activated Xcode.
-  set frontmost to true
+  if (count of buttons of group "Recently spoken" of root) is not 2 then error "Expected two recent messages"
+  click button "Say again: Second queued sentence." of group "Recently spoken" of root
   delay 0.2
-  click text area 1 of root
-  keystroke "a" using command down
+  if (count of groups of group "Speech queue" of root) is not 1 then error "Replay did not enqueue"
+  click button "Language and voice settings" of group 1 of root
+  if not (exists pop up button "Language" of group "Speech settings" of root) then error "Missing language menu"
+  if not (exists pop up button "Voice" of group "Speech settings" of root) then error "Missing voice menu"
+  set oldSpeed to value of slider "Speed" of group "Speech settings" of root
+  perform action "AXIncrement" of slider "Speed" of group "Speech settings" of root
   delay 0.1
-  key code 51
-  repeat 20 times
-   delay 0.1
-   if not enabled of button "Speak" of root then exit repeat
-  end repeat
-  if value of text area 1 of root is not "" then error "Clear did not reach the focused text field"
-  if enabled of button "Speak" of root then error "Speak should be disabled for empty input"
-  click checkbox "Emma British English" of group "Voice" of root
+  if (value of slider "Speed" of group "Speech settings" of root as real) ≤ (oldSpeed as real) then error "Speed did not change"
+  perform action "AXDecrement" of slider "Speed" of group "Speech settings" of root
+  click button "Language and voice settings" of group 1 of root
  end tell
 end tell
-return "PASS: typed speech, repeat, stop during playback, stop during generation, speed, Mandarin, empty input"
+my waitEmpty()
+return "PASS: typing, clear-on-send, queue append/removal, two recent items, replay, settings, speed"

@@ -11,6 +11,7 @@ use std::{
     },
 };
 
+mod frontend;
 pub mod worker;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +53,7 @@ pub fn model_dir() -> PathBuf {
 
 pub struct SpeechEngine {
     tts: OfflineTts,
+    english: frontend::English,
 }
 
 pub struct Audio {
@@ -99,7 +101,10 @@ impl SpeechEngine {
         if tts.num_speakers() <= Voice::Xiaoxiao.speaker_id() {
             bail!("Wrong voice table: expected Kokoro v1.0 bilingual voices");
         }
-        Ok(Self { tts })
+        Ok(Self {
+            tts,
+            english: frontend::English::new()?,
+        })
     }
 
     pub fn generate(
@@ -116,6 +121,7 @@ impl SpeechEngine {
         }
         let config = GenerationConfig {
             sid: voice.speaker_id(),
+            phoneme_codepoints: (voice == Voice::Emma).then(|| self.english.phonemes(text)),
             speed,
             ..Default::default()
         };

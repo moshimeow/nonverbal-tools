@@ -7,6 +7,7 @@ default-run = "speak-pocket"
 [dependencies]
 anyhow = "1"
 dioxus = { version = "=0.7.10" }
+loqui-g2p = "=0.4.0"
 rodio = { version = "0.20", default-features = false }
 sherpa-onnx = { version = "=2.0.0", default-features = false }
 tokio = { version = "1", features = ["sync"] }
