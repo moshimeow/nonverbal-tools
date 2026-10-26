@@ -30,7 +30,7 @@ Rust, and Python 3 (used only by the bundle-staging helper):
 The local Dioxus executable is `.tools/dioxus/dx`. Use the wrapper because `dx`
 elsewhere on this Mac belongs to Deno. Cargo.lock is committed. The setup script
 verifies the CLI/model archive hashes; model downloads and build products are
-ignored by Git. The resulting offline app is roughly 211 MB.
+ignored by Git. The resulting offline app is roughly 412 MB.
 
 ```sh
 cargo test --manifest-path ios/Cargo.toml --release --lib
@@ -101,9 +101,22 @@ history; Rust tests and Clippy. The updated UI was inspected at phone width and
 send/clear/queue insertion were exercised. The full UI smoke script requires an
 empty composer and refuses to overwrite an existing draft.
 
+The int8 model produced all-NaN audio for some short inputs (`woof!`, `Hello!`,
+`floof`). The full-precision model fixes those cases without altering the words.
+On-device diagnostics verified valid 24 kHz output for `woof!`, `woof`, `Hello!`,
+`Hello world.`, `zorbulate`, `floof`, and longer sentences. `./ios.sh check` includes
+short-word regressions and fails if any sample is invalid. To repeat synthesis
+checks on a connected iPhone, launch with the diagnostic argument (then relaunch
+normally afterward):
+
+```sh
+xcrun devicectl device process launch --device YOUR_DEVICE_ID --terminate-existing \
+  --console com.moshi.speakpocket --speech-check
+```
+
 The previous iPhone build's playback was confirmed by the user. The queue update
 was built, signed, installed and launched on their iPhone 15 Pro Max. The speaker
-override compiles for iPhone; connected-AirPods routing and mid-sentence accessory
+override is built and installed; connected-AirPods routing and mid-sentence accessory
 changes still need a physical test. Chinese keyboard composition, interruptions,
 background/foreground transitions and phone synthesis latency need more testing.
 
@@ -118,7 +131,7 @@ is not automatically language-detected.
 - [sherpa-onnx 2.0.0](https://docs.rs/sherpa-onnx/2.0.0/sherpa_onnx/): Rust API
   over the native speech runtime; iOS uses its prebuilt shared framework.
 - [Bilingual Kokoro v1.0](https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/kokoro.html):
-  int8 ONNX model, British/Chinese lexicons, Chinese number rules and dictionary.
+  full-precision ONNX model, British/Chinese lexicons, Chinese number rules and dictionary.
   Speaker IDs 21 and 47 correspond to `bf_emma` and `zf_xiaoxiao` in the
   [v1.0 voice table](https://github.com/k2-fsa/sherpa-onnx/blob/master/scripts/kokoro/v1.0/generate_voices_bin.py).
 - Rodio/CPAL handle native playback. The model's license is copied into the app

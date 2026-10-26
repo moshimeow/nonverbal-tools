@@ -6,6 +6,41 @@ use speak_pocket::{
 use std::{cell::RefCell, rc::Rc};
 
 fn main() {
+    if std::env::args().any(|a| a == "--speech-check") {
+        std::thread::spawn(|| {
+            let result = (|| -> anyhow::Result<()> {
+                let engine = speak_pocket::SpeechEngine::load(&speak_pocket::model_dir())?;
+                for text in [
+                    "woof!",
+                    "woof",
+                    "Hello!",
+                    "Hello world.",
+                    "Henlo! This blorptastic floof wants to zorbulate.",
+                    "zorbulate",
+                    "floof",
+                    "Hello! One moment please, I'm typing my reply.",
+                ] {
+                    let result = engine.generate(
+                        text,
+                        Voice::Emma,
+                        1.0,
+                        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
+                        1,
+                    );
+                    match result {
+                        Ok(audio) => println!(
+                            "DEVICE CHECK {text:?}: {} samples, {} Hz",
+                            audio.samples.len(),
+                            audio.sample_rate
+                        ),
+                        Err(e) => println!("DEVICE CHECK {text:?}: ERROR {e:#}"),
+                    }
+                }
+                Ok(())
+            })();
+            println!("DEVICE CHECK COMPLETE: {result:?}");
+        });
+    }
     dioxus::launch(App);
 }
 

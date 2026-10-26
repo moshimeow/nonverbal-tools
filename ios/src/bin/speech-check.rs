@@ -3,7 +3,15 @@ use std::sync::{Arc, atomic::AtomicU64};
 
 fn main() -> anyhow::Result<()> {
     let engine = SpeechEngine::load(&model_dir())?;
+    let mut failures = 0;
     for (voice, text) in [
+        (Voice::Emma, "woof!"),
+        (Voice::Emma, "woof"),
+        (Voice::Emma, "floof."),
+        (Voice::Emma, "floof"),
+        (Voice::Emma, "zorbulate"),
+        (Voice::Emma, "Hello!"),
+        (Voice::Emma, "Thank you!"),
         (
             Voice::Emma,
             "Hello! One moment please, I'm typing my reply.",
@@ -18,14 +26,21 @@ fn main() -> anyhow::Result<()> {
         ),
     ] {
         let start = std::time::Instant::now();
-        let audio = engine.generate(text, voice, 1.0, Arc::new(AtomicU64::new(0)), 0)?;
+        let audio = match engine.generate(text, voice, 1.0, Arc::new(AtomicU64::new(0)), 0) {
+            Ok(audio) => audio,
+            Err(e) => {
+                println!("FAILED {text:?}: {e:#}");
+                failures += 1;
+                continue;
+            }
+        };
         anyhow::ensure!(
             audio.samples.iter().any(|s| s.abs() > 0.001),
             "Silent audio"
         );
         let seconds = audio.samples.len() as f64 / audio.sample_rate as f64;
         println!(
-            "{}: {:.2}s audio at {} Hz, generated in {:.2}s",
+            "{text:?} — {}: {:.2}s audio at {} Hz, generated in {:.2}s",
             voice.name(),
             seconds,
             audio.sample_rate,
@@ -42,5 +57,6 @@ fn main() -> anyhow::Result<()> {
             sink.sleep_until_end();
         }
     }
+    anyhow::ensure!(failures == 0, "{failures} synthesis checks failed");
     Ok(())
 }

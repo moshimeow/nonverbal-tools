@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DX="$ROOT/.tools/dioxus/dx"
-MODEL="$ROOT/ios/assets/kokoro-int8-multi-lang-v1_0"
+MODEL="$ROOT/ios/assets/kokoro-multi-lang-v1_0"
 export IPHONEOS_DEPLOYMENT_TARGET=18.0
 case "${1:-help}" in
   setup)
@@ -14,9 +14,9 @@ case "${1:-help}" in
       tar -xzf "$ROOT/.tools/downloads/dx.tar.gz" -C "$ROOT/.tools/dioxus"
     fi
     rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-    if [ ! -f "$MODEL/model.int8.onnx" ]; then
-      curl --fail --location --retry 3 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2 -o "$ROOT/.tools/downloads/kokoro.tar.bz2"
-      (cd "$ROOT/.tools/downloads"; echo '4c3052abaa60943a341f193888cf6abd68787dae6ab8ae5c925a706caa247e4e  kokoro.tar.bz2' | shasum -a 256 -c -)
+    if [ ! -f "$MODEL/model.onnx" ]; then
+      curl --fail --location --retry 3 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2 -o "$ROOT/.tools/downloads/kokoro.tar.bz2"
+      (cd "$ROOT/.tools/downloads"; echo 'c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298  kokoro.tar.bz2' | shasum -a 256 -c -)
       tar -xjf "$ROOT/.tools/downloads/kokoro.tar.bz2" -C "$ROOT/ios/assets"
     fi
     cargo fetch --locked --manifest-path "$ROOT/ios/Cargo.toml"

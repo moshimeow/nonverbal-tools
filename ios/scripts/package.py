@@ -17,10 +17,10 @@ frameworks = list((ROOT / "target").glob("**/ios-arm64/SherpaOnnxC.framework"))
 if not frameworks:
     raise SystemExit("Missing SherpaOnnxC iPhone framework; complete the iOS build first")
 shutil.copytree(frameworks[0], app / "Frameworks/SherpaOnnxC.framework", dirs_exist_ok=True)
-model = ROOT / "assets/kokoro-int8-multi-lang-v1_0"
+model = ROOT / "assets/kokoro-multi-lang-v1_0"
 dest = app / "kokoro"
 dest.mkdir(exist_ok=True)
-for name in ["model.int8.onnx", "voices.bin", "tokens.txt", "lexicon-gb-en.txt", "lexicon-zh.txt", "number-zh.fst", "LICENSE", "README.md"]:
+for name in ["model.onnx", "voices.bin", "tokens.txt", "lexicon-gb-en.txt", "lexicon-zh.txt", "number-zh.fst", "LICENSE", "README.md"]:
     shutil.copy2(model / name, dest / name)
 shutil.copytree(model / "dict", dest / "dict", dirs_exist_ok=True)
 shutil.copytree(ROOT / "licenses", app / "licenses", dirs_exist_ok=True)

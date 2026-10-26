@@ -48,7 +48,7 @@ pub fn model_dir() -> PathBuf {
             return bundled;
         }
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/kokoro-int8-multi-lang-v1_0")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/kokoro-multi-lang-v1_0")
 }
 
 pub struct SpeechEngine {
@@ -63,8 +63,9 @@ pub struct Audio {
 
 impl SpeechEngine {
     pub fn load(dir: &Path) -> Result<Self> {
+        let model_name = "model.onnx";
         for name in [
-            "model.int8.onnx",
+            model_name,
             "voices.bin",
             "tokens.txt",
             "lexicon-gb-en.txt",
@@ -80,7 +81,7 @@ impl SpeechEngine {
         let config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
                 kokoro: OfflineTtsKokoroModelConfig {
-                    model: Some(path("model.int8.onnx")),
+                    model: Some(path(model_name)),
                     voices: Some(path("voices.bin")),
                     tokens: Some(path("tokens.txt")),
                     lexicon: Some(format!(
@@ -136,7 +137,12 @@ impl SpeechEngine {
         let samples = audio.samples().to_vec();
         if samples.is_empty() || !samples.iter().all(|s| s.is_finite()) || audio.sample_rate() <= 0
         {
-            bail!("Kokoro returned invalid or empty audio");
+            bail!(
+                "Kokoro returned invalid audio ({} samples, {} non-finite, {} Hz)",
+                samples.len(),
+                samples.iter().filter(|s| !s.is_finite()).count(),
+                audio.sample_rate()
+            );
         }
         Ok(Audio {
             samples,
