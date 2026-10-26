@@ -4,3 +4,7 @@ name = "Speak Pocket"
 [bundle]
 identifier = "com.moshi.speakpocket"
 publisher = "moshi"
+
+[macos.plist]
+NSLocationUsageDescription = "Save where you sent each Speak or Write message in your private history."
+NSLocationWhenInUseUsageDescription = "Save where you sent each Speak or Write message in your private history."

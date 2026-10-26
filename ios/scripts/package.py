@@ -34,6 +34,7 @@ info.update({
     "CFBundleVersion": "1",
     "MinimumOSVersion": "18.0",
     "ITSAppUsesNonExemptEncryption": False,
+    "NSLocationWhenInUseUsageDescription": "Save where you sent each Speak or Write message in your private history.",
 })
 with (app / "Info.plist").open("wb") as f:
     plistlib.dump(info, f)

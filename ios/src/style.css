@@ -47,3 +47,21 @@ nav { align-items: center; gap: 14px; position: sticky; top: env(safe-area-inset
 .history-item { padding: 14px; background: #fffdf9; border: 1px solid #ded7e2; border-radius: 16px; margin-bottom: 10px; }
 .history-item p { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; margin: 0 0 10px; line-height: 1.5; }
 .history-empty { color: #81758c; line-height: 1.5; }
+
+[hidden] { display: none !important; }
+.write-toolbar { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.write-toolbar button { min-width: 44px; padding: 8px; background: transparent; font-size: 22px; }
+.history-menu { background: #fffdf9; font-size: 24px; width: 52px; }
+.tab { font-size: 24px; padding: 5px 15px; }
+#write-message { width: 100%; line-height: 1.35; }
+.write-entry { position: relative; overflow-wrap: anywhere; }
+.write-entry p { margin: 0; line-height: 1.35; white-space: pre-wrap; user-select: text; }
+.spacing-handle { display: block; margin: 12px auto; width: 80px; min-height: 44px; border: 0; border-radius: 12px; color: #887e75; background: transparent; touch-action: none; cursor: ns-resize; }
+.spacing-handle:hover, .spacing-handle:focus-visible { background: #e8e1d9; }
+.history-meta { display: block; color: #736c65; font-size: 12px; margin-bottom: 5px; }
+#write-view { overflow-anchor: none; }
+@media (max-width: 380px) { nav { gap: 5px; } .tab { padding: 8px 13px; } }
+
+.tab, .history-menu { display: inline-flex; align-items: center; justify-content: center; }
+
+.write-send { display: flex; justify-content: center; align-items: center; }

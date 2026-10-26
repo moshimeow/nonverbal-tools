@@ -1,4 +1,10 @@
 fn main() {
+    println!("cargo:rerun-if-changed=src/location.m");
+    cc::Build::new()
+        .file("src/location.m")
+        .flag("-fobjc-arc")
+        .compile("speak_location");
+    println!("cargo:rustc-link-lib=framework=CoreLocation");
     println!("cargo:rerun-if-changed=src/platform.m");
     cc::Build::new()
         .file("src/platform.m")

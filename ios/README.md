@@ -157,3 +157,35 @@ is not automatically language-detected.
   native speaker routing, reapplied after route changes.
 
 - SQLite (via bundled rusqlite) stores the local sent-message transcript; UIKit/AppKit handle clipboard writes.
+
+### Write and message metadata
+
+The pencil (Write) tab is a silent, newest-first conversation sheet. The speaker icon returns to Speak;
+the clock (History) lives in the hamburger menu. The text-size buttons share the top row
+with the outline-icon tabs. The live draft sits at
+its top; Enter or Send saves it and opens a fresh draft above it. The − / + buttons
+change text size. Drag a message's small horizontal handle down or up to change
+only the blank space above that message. Spacing and messages survive a restart;
+there is no message-count limit or pagination in Write. A focused handle also
+accepts the up/down arrow keys for spacing.
+
+Enter (including Shift-Enter) submits in Speak and Write. Enter used to confirm
+Chinese IME composition does not send the message. Write messages share the
+copyable History tab with spoken messages, labeled by their source.
+
+History shows local date and time for all messages, including existing history.
+New sends request a one-shot Core Location fix when permission is allowed; the
+history shows coordinates and estimated accuracy. This does not track location
+in the background. Denial, unavailable fixes, and old messages are shown as
+“Location not recorded”; the app never fills old messages with a later location.
+Messages remain usable without location permission. Coordinates, text, timestamps,
+and spacing stay in the existing local SQLite history.
+
+Additional checks:
+
+```sh
+node ios/scripts/interaction-check.cjs
+cargo test --locked --manifest-path ios/Cargo.toml --lib
+# Launch desktop with an isolated SPEAK_DATA_DIR before running this UI test:
+osascript ios/scripts/write-smoke.applescript
+```

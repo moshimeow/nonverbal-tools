@@ -124,6 +124,9 @@ impl Queue {
 }
 enum Request {
     Enqueue(Item),
+    Write(String, tokio::sync::oneshot::Sender<anyhow::Result<()>>),
+    Location(i64, Option<crate::history::Location>),
+    Gap(i64, f64),
     Remove(u64),
     Generated(u64, anyhow::Result<Audio>),
     Shutdown,
@@ -141,15 +144,19 @@ impl Drop for Handle {
 pub struct Speaker(Arc<Handle>);
 impl Speaker {
     pub fn start() -> (Self, UnboundedReceiver<Snapshot>) {
-        Self::start_inner(crate::platform::data_directory().map(|dir| dir.join("history.sqlite3")))
+        Self::start_inner(
+            crate::platform::data_directory().map(|dir| dir.join("history.sqlite3")),
+            true,
+        )
     }
     pub fn start_with_history_path(
         path: std::path::PathBuf,
     ) -> (Self, UnboundedReceiver<Snapshot>) {
-        Self::start_inner(Ok(path))
+        Self::start_inner(Ok(path), false)
     }
     fn start_inner(
         history_path: anyhow::Result<std::path::PathBuf>,
+        locations: bool,
     ) -> (Self, UnboundedReceiver<Snapshot>) {
         let (tx, rx) = mpsc::channel();
         let (events, receiver) = unbounded_channel();
@@ -179,7 +186,18 @@ impl Speaker {
                 }
             }
         });
+        let location_sender = tx.clone();
         std::thread::spawn(move || {
+            let locate = |id| {
+                let sender = location_sender.clone();
+                if locations {
+                    crate::platform::capture_location(move |location| {
+                        let _ = sender.send(Request::Location(id, location));
+                    });
+                } else {
+                    let _ = sender.send(Request::Location(id, None));
+                }
+            };
             let mut queue = Queue::default();
             let history_result = history_path.and_then(|path| crate::history::History::open(&path));
             let mut history_error = history_result
@@ -195,11 +213,38 @@ impl Speaker {
                     Ok(Request::Enqueue(item)) => {
                         if let Some(store) = history.as_mut() {
                             history_error = store
-                                .record(&item.text)
+                                .record_kind(&item.text, crate::history::MessageKind::Speak)
+                                .map(&locate)
                                 .err()
                                 .map(|e| format!("This message could not be saved: {e:#}"));
                         }
                         queue.enqueue(item);
+                    }
+                    Ok(Request::Write(text, reply)) => {
+                        let result = history
+                            .as_mut()
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("History unavailable; message was not saved")
+                            })
+                            .and_then(|store| {
+                                store.record_kind(&text, crate::history::MessageKind::Write)
+                            })
+                            .map(&locate);
+                        let _ = reply.send(result);
+                    }
+                    Ok(Request::Location(id, location)) => {
+                        if let Some(store) = history.as_mut()
+                            && let Err(e) = store.set_location(id, location)
+                        {
+                            history_error = Some(format!("Could not save location: {e}"));
+                        }
+                    }
+                    Ok(Request::Gap(id, gap)) => {
+                        if let Some(store) = history.as_mut()
+                            && let Err(e) = store.set_gap(id, gap)
+                        {
+                            history_error = Some(format!("Could not save spacing: {e}"));
+                        }
                     }
                     Ok(Request::Remove(id)) => {
                         queue.remove(id);
@@ -290,6 +335,15 @@ impl Speaker {
         }))?;
         Ok(id)
     }
+    pub async fn write(&self, text: String) -> anyhow::Result<()> {
+        crate::validate_text(&text)?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.0.tx.send(Request::Write(text, tx))?;
+        rx.await?
+    }
+    pub fn set_gap(&self, id: i64, gap: f64) {
+        let _ = self.0.tx.send(Request::Gap(id, gap));
+    }
     pub fn remove(&self, id: u64) {
         let _ = self.0.tx.send(Request::Remove(id));
     }
@@ -329,6 +383,55 @@ mod tests {
             samples: vec![0.1; 10],
             sample_rate: 24000,
         })
+    }
+    #[test]
+    fn writing_is_durable_and_never_enters_the_audio_queue() {
+        use std::{
+            future::Future,
+            task::{Context, Poll, Waker},
+            time::Instant,
+        };
+        let path =
+            std::env::temp_dir().join(format!("speak-write-worker-{}.sqlite", std::process::id()));
+        let (speaker, mut events) = Speaker::start_with_history_path(path.clone());
+        let mut send = Box::pin(speaker.write("Written, never spoken.".into()));
+        let start = Instant::now();
+        loop {
+            if let Poll::Ready(result) = send.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+            {
+                result.unwrap();
+                break;
+            }
+            assert!(start.elapsed() < Duration::from_secs(5));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        loop {
+            if let Ok(snapshot) = events.try_recv() {
+                assert!(snapshot.queue.is_empty());
+                assert!(snapshot.recent.is_empty());
+                if !snapshot.history.is_empty() {
+                    break;
+                }
+            }
+            assert!(start.elapsed() < Duration::from_secs(5));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let db = rusqlite::Connection::open(&path).unwrap();
+        let (text, kind): (String, String) = db
+            .query_row(
+                "SELECT text,kind FROM sent_messages ORDER BY id DESC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (text.as_str(), kind.as_str()),
+            ("Written, never spoken.", "write")
+        );
+        drop(send);
+        drop(speaker);
+        drop(db);
+        let _ = std::fs::remove_file(path);
     }
     #[test]
     fn fifo_prefetch_and_recent_history() {
