@@ -14,6 +14,11 @@ Nothing is sent to a server. Dioxus renders the Rust UI in the platform WebView;
 inference and audio playback are native. English uses a Misaki-style Rust
 phonemizer with an embedded neural fallback for names, typos, and invented words.
 Mandarin uses the bilingual model's Chinese lexicon and number normalization.
+English words containing only uppercase ASCII letters (at least two) are spelled
+out using British letter names: `NASA`, `CPU`, `API`, and even `HELLO`. Single `I`
+and `A` stay normal words. A question mark, including `？`, ends an English synthesis
+segment so the following statement cannot determine its ending contour. Kokoro
+still controls prosody; this is not a guaranteed or artificially applied pitch rise.
 
 ## Development
 
@@ -47,7 +52,14 @@ thread handles the queue and audio output, preparing at most one item ahead of
 the current message. Removing a playing item stops its sink promptly; removing a
 generating item invalidates its result and requests cancellation at the next
 inference callback. Failed rows remain removable and do not block later messages.
-History contains completed messages only. The queue and history are in memory.
+The two replay cards contain completed messages only and stay in memory. The
+History tab separately saves **every sent message**, including replayed, canceled,
+and failed messages, in a local SQLite database in Application Support. It survives
+relaunches and app updates; uninstalling the app removes it. History starts with
+this version because earlier builds did not persist a transcript. Original text is
+preserved. Entries are selectable, have a native Copy button, and Copy all exports
+the complete transcript in chronological order. The list shows newest first and
+loads 100 rows at a time. Switching tabs keeps the unsent draft intact.
 
 On iPhone, the native session uses `playAndRecord`, `defaultToSpeaker`, and an
 explicit speaker override before playback. Route-change notifications reapply
@@ -120,7 +132,7 @@ override is built and installed; connected-AirPods routing and mid-sentence acce
 changes still need a physical test. Chinese keyboard composition, interruptions,
 background/foreground transitions and phone synthesis latency need more testing.
 
-This remains a foreground prototype: no saved phrases, persistent settings,
+This remains a foreground prototype: no saved phrase presets, persistent settings,
 phrase-audio cache, or App Store packaging. Unfamiliar-word pronunciations are
 best effort. English and Mandarin have separate frontends; mixed-language text
 is not automatically language-detected.
@@ -143,3 +155,5 @@ is not automatically language-detected.
   license and notices are bundled in `licenses/loqui-g2p/` inside the app.
 - [Apple speaker override](https://developer.apple.com/documentation/avfaudio/avaudiosession/overrideoutputaudioport(_:)):
   native speaker routing, reapplied after route changes.
+
+- SQLite (via bundled rusqlite) stores the local sent-message transcript; UIKit/AppKit handle clipboard writes.

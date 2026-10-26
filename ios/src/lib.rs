@@ -12,6 +12,8 @@ use std::{
 };
 
 mod frontend;
+pub mod history;
+pub mod platform;
 pub mod worker;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

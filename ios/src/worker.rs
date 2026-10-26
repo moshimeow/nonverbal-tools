@@ -42,6 +42,8 @@ pub struct Item {
 pub struct Snapshot {
     pub queue: Vec<Item>,
     pub recent: Vec<Item>,
+    pub history: Arc<Vec<crate::history::SentMessage>>,
+    pub history_error: Option<String>,
 }
 struct Entry {
     item: Item,
@@ -58,6 +60,7 @@ impl Queue {
         Snapshot {
             queue: self.entries.iter().map(|e| e.item.clone()).collect(),
             recent: self.recent.iter().cloned().collect(),
+            ..Snapshot::default()
         }
     }
     fn enqueue(&mut self, item: Item) {
@@ -138,6 +141,16 @@ impl Drop for Handle {
 pub struct Speaker(Arc<Handle>);
 impl Speaker {
     pub fn start() -> (Self, UnboundedReceiver<Snapshot>) {
+        Self::start_inner(crate::platform::data_directory().map(|dir| dir.join("history.sqlite3")))
+    }
+    pub fn start_with_history_path(
+        path: std::path::PathBuf,
+    ) -> (Self, UnboundedReceiver<Snapshot>) {
+        Self::start_inner(Ok(path))
+    }
+    fn start_inner(
+        history_path: anyhow::Result<std::path::PathBuf>,
+    ) -> (Self, UnboundedReceiver<Snapshot>) {
         let (tx, rx) = mpsc::channel();
         let (events, receiver) = unbounded_channel();
         let (jobs, pending) = mpsc::channel::<Item>();
@@ -168,12 +181,26 @@ impl Speaker {
         });
         std::thread::spawn(move || {
             let mut queue = Queue::default();
+            let history_result = history_path.and_then(|path| crate::history::History::open(&path));
+            let mut history_error = history_result
+                .as_ref()
+                .err()
+                .map(|e| format!("History unavailable: {e:#}"));
+            let mut history = history_result.ok();
             let mut output = None;
             let mut playing: Option<(u64, Sink)> = None;
             let mut last = Snapshot::default();
             loop {
                 match rx.recv_timeout(Duration::from_millis(15)) {
-                    Ok(Request::Enqueue(item)) => queue.enqueue(item),
+                    Ok(Request::Enqueue(item)) => {
+                        if let Some(store) = history.as_mut() {
+                            history_error = store
+                                .record(&item.text)
+                                .err()
+                                .map(|e| format!("This message could not be saved: {e:#}"));
+                        }
+                        queue.enqueue(item);
+                    }
                     Ok(Request::Remove(id)) => {
                         queue.remove(id);
                         if queue.generating == Some(id) {
@@ -222,7 +249,11 @@ impl Speaker {
                         break;
                     }
                 }
-                let snapshot = queue.snapshot();
+                let mut snapshot = queue.snapshot();
+                if let Some(store) = &history {
+                    snapshot.history = store.entries.clone();
+                }
+                snapshot.history_error = history_error.clone();
                 if snapshot != last {
                     if events.send(snapshot.clone()).is_err() {
                         break;

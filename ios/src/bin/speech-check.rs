@@ -5,6 +5,10 @@ fn main() -> anyhow::Result<()> {
     let engine = SpeechEngine::load(&model_dir())?;
     let mut failures = 0;
     for (voice, text) in [
+        (Voice::Emma, "NASA uses a CPU and an API."),
+        (Voice::Emma, "You are coming."),
+        (Voice::Emma, "You are coming?"),
+        (Voice::Emma, "Are you coming? I can wait."),
         (Voice::Emma, "woof!"),
         (Voice::Emma, "woof"),
         (Voice::Emma, "floof."),

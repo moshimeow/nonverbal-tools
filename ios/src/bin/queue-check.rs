@@ -5,7 +5,12 @@ use speak_pocket::{
 };
 use std::time::{Duration, Instant};
 fn main() -> anyhow::Result<()> {
-    let (speaker, mut events) = Speaker::start();
+    let data_dir = std::env::var_os("SPEAK_DATA_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::temp_dir().join(format!("speak-queue-check-{}", std::process::id()))
+        });
+    let (speaker, mut events) = Speaker::start_with_history_path(data_dir.join("history.sqlite3"));
     let first = speaker.speak("This is the first queued message. While I am speaking, the next message should be preparing on another thread. This sentence gives that check a little more time.".into(), Voice::Emma, 1.0)?;
     let second = speaker.speak("Henlo, blorptastic floof!".into(), Voice::Emma, 1.0)?;
     let third = speaker.speak("你好！这是排队的中文。".into(), Voice::Xiaoxiao, 1.0)?;
@@ -66,6 +71,14 @@ fn main() -> anyhow::Result<()> {
                 anyhow::ensure!(
                     overlapped && cancel_seen,
                     "Did not observe concurrent synthesis and responsive Stop"
+                );
+                anyhow::ensure!(state.history_error.is_none(), "History write failed");
+                anyhow::ensure!(
+                    state
+                        .history
+                        .iter()
+                        .any(|item| item.text == "This should never be spoken."),
+                    "Removed messages must remain in sent history"
                 );
                 let item = &state.recent[0];
                 let replay = speaker.speak(item.text.clone(), item.voice, item.speed)?;

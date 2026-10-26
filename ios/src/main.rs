@@ -125,6 +125,9 @@ fn App() -> Element {
     let mut voice = use_signal(|| Voice::Emma);
     let mut speed = use_signal(|| 1.0f32);
     let mut menu = use_signal(|| false);
+    let mut history_tab = use_signal(|| false);
+    let mut history_limit = use_signal(|| 100usize);
+    let mut copied = use_signal(String::new);
     let mut error = use_signal(String::new);
     let mut state = use_signal(Snapshot::default);
     let (speaker, receiver) = use_hook(|| {
@@ -149,6 +152,12 @@ fn App() -> Element {
             nav {
                 button { class: "menu-toggle", aria_label: "Language and voice settings", aria_expanded: menu().to_string(), aria_controls: "settings",
                     onclick: move |_| menu.toggle(), if menu() { "×" } else { "☰" } }
+                div { class: "tabs", role: "tablist", aria_label: "View",
+                    button { role: "tab", id: "speak-tab", aria_controls: "speech-view", aria_selected: (!history_tab()).to_string(),
+                        class: if history_tab() { "tab" } else { "tab active" }, onclick: move |_| history_tab.set(false), "Speak" }
+                    button { role: "tab", id: "history-tab", aria_controls: "history-view", aria_selected: history_tab().to_string(),
+                        class: if history_tab() { "tab active" } else { "tab" }, onclick: move |_| { history_tab.set(true); copied.set(String::new()); }, "History" }
+                }
             }
             if menu() {
                 section { id: "settings", class: "settings", aria_label: "Speech settings",
@@ -171,6 +180,30 @@ fn App() -> Element {
                     }
                 }
             }
+            if let Some(message) = state().history_error { p { class: "error", role: "alert", "{message}" } }
+            if history_tab() {
+                section { id: "history-view", role: "tabpanel", aria_labelledby: "history-tab", class: "history",
+                    div { class: "history-toolbar",
+                        span { "{state().history.len()} sent messages" }
+                        button { class: "copy", disabled: state().history.is_empty(), onclick: move |_| {
+                            let all = state.peek().history.iter().map(|item| item.text.as_str()).collect::<Vec<_>>().join("\n\n");
+                            copied.set(match speak_pocket::platform::copy_text(&all) { Ok(()) => "Copied all messages".into(), Err(e) => e.to_string() });
+                        }, "Copy all" }
+                    }
+                    p { class: "copy-status", role: "status", "{copied}" }
+                    if state().history.is_empty() { p { class: "history-empty", "Messages you send will appear here, even after restarting the app." } }
+                    for item in state().history.iter().rev().take(history_limit()).cloned() {
+                        article { key: "history-{item.id}", class: "history-item",
+                            p { "{item.text}" }
+                            button { class: "copy", aria_label: "Copy message {item.id}", onclick: move |_| {
+                                copied.set(match speak_pocket::platform::copy_text(&item.text) { Ok(()) => "Copied message".into(), Err(e) => e.to_string() });
+                            }, "Copy" }
+                        }
+                    }
+                    if state().history.len() > history_limit() { button { class: "copy", onclick: move |_| history_limit += 100, "Show older messages" } }
+                }
+            }
+            div { id: "speech-view", class: "speech-view", role: "tabpanel", aria_labelledby: "speak-tab", hidden: history_tab(),
             div { class: "stream",
                 if !state().recent.is_empty() {
                     section { class: "recent", aria_label: "Recently spoken",
@@ -198,6 +231,7 @@ fn App() -> Element {
                 }
                 button { class: "send", disabled: text().trim().is_empty(), onclick: move |_| send_draft(send.clone(), voice(), speed(), error), "▶ Play" }
                 if !error().is_empty() { p { role: "alert", class: "error", "{error}" } }
+            }
             }
         }
     }
