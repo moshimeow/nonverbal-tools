@@ -31,6 +31,8 @@ ignored by Git. The resulting offline app is roughly 189 MB.
 cargo test --manifest-path ios/Cargo.toml --release --lib
 cargo clippy --manifest-path ios/Cargo.toml --release --all-targets -- -D warnings
 cargo fmt --manifest-path ios/Cargo.toml --check
+# With the desktop app running and Accessibility permission granted:
+osascript ios/scripts/ui-smoke.applescript
 ```
 
 The native engine runs on one dedicated worker thread and remains loaded between
@@ -68,18 +70,20 @@ APPLE_TEAM_ID=YOUR_TEAM_ID IOS_DEVICE_ID=YOUR_DEVICE_ID ./ios.sh deploy
 The deploy command builds with Dioxus, stages the model and the iPhone slice of
 SherpaOnnxC.framework, lets Xcode sign both, then installs and launches with
 `devicectl`. Device pairing/account login must be completed interactively.
+The CLI resolves the CoreDevice identifier to the hardware UDID Xcode requires
+and allows Xcode to register that destination with your signing team.
 
 ## Validation and current limits
 
 Verified on the development Mac: real English and Chinese generation/playback,
 finite non-silent 24 kHz output, Rust input-validation tests, Clippy, desktop UI
-startup, arm64 iOS compilation, and unsigned Xcode packaging. The initial speech
+typing without dropped characters, phrase selection, Repeat, Stop during playback
+and generation, speed control, empty-input handling, arm64 iOS compilation, and
+unsigned Xcode packaging. The initial speech
 check generated 3.27 seconds of English in 3.45 seconds and 4.31 seconds of
 Mandarin in 4.65 seconds; these are Mac observations, not iPhone benchmarks.
 
-**Physical iPhone playback is not yet verified.** At initial setup, the phone
-was unavailable and this Mac had zero signing identities. No simulator runtime
-was installed either. Phone-specific checks still needed: Chinese keyboard
+**Physical iPhone playback is not yet verified.** Phone-specific checks still needed: Chinese keyboard
 composition, audio interruptions/headphone routing, background/foreground
 transitions, and cold/warm synthesis latency.
 

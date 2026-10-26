@@ -37,11 +37,15 @@ case "${1:-help}" in
   deploy)
     : "${APPLE_TEAM_ID:?Set APPLE_TEAM_ID to your Xcode signing team ID}"
     : "${IOS_DEVICE_ID:?Set IOS_DEVICE_ID to the connected iPhone identifier}"
+    DEVICE_INFO=$(mktemp)
+    trap 'rm -f "$DEVICE_INFO"' EXIT
+    xcrun devicectl device info details --device "$IOS_DEVICE_ID" --json-output "$DEVICE_INFO"
+    DEVICE_UDID=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["result"]["hardwareProperties"]["udid"])' "$DEVICE_INFO")
     "$ROOT/ios.sh" build
-    xcodebuild -project "$ROOT/ios/SpeakPocket.xcodeproj" -target SpeakPocket \
-      -configuration Release -sdk iphoneos \
-      "SYMROOT=$ROOT/ios/target/signing/Build/Products" \
-      "OBJROOT=$ROOT/ios/target/signing/Build/Intermediates" -allowProvisioningUpdates \
+    xcodebuild -project "$ROOT/ios/SpeakPocket.xcodeproj" -scheme SpeakPocket \
+      -configuration Release -sdk iphoneos -destination "id=$DEVICE_UDID" \
+      -derivedDataPath "$ROOT/ios/target/signing" \
+      -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
       "DEVELOPMENT_TEAM=$APPLE_TEAM_ID" build
     APP="$ROOT/ios/target/signing/Build/Products/Release-iphoneos/SpeakPocket.app"
     xcrun devicectl device install app --device "$IOS_DEVICE_ID" "$APP"

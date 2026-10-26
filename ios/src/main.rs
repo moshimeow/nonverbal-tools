@@ -6,6 +6,21 @@ fn main() {
     dioxus::launch(App);
 }
 
+fn replace_draft(phrase: &str, mut text: Signal<String>, mut status: Signal<String>) {
+    // A saved phrase is an explicit edit. Send it as data, never JavaScript source.
+    let eval = document::eval("document.getElementById('message').value = await dioxus.recv();");
+    if let Err(error) = eval.send(phrase) {
+        status.set(format!("Couldn't update the text box: {error}"));
+        return;
+    }
+    text.set(phrase.into());
+    spawn(async move {
+        if let Err(error) = eval.await {
+            status.set(format!("Couldn't update the text box: {error}"));
+        }
+    });
+}
+
 fn submit(
     speaker: &Speaker,
     text: String,
@@ -89,7 +104,9 @@ fn App() -> Element {
             }
             label { r#for: "message", class: "label", "What would you like to say?" }
             textarea {
-                id: "message", rows: 5, maxlength: 2000, value: "{text}",
+                // Keep typing/IME state in the WebView. Echoing `value` across
+                // the async bridge can overwrite newer keystrokes with stale text.
+                id: "message", rows: 5, maxlength: 2000, initial_value: "{text}",
                 placeholder: if chinese { "在这里输入你想说的话……" } else { "Type a thought…" },
                 oninput: move |event| text.set(event.value()),
             }
@@ -110,7 +127,7 @@ fn App() -> Element {
             div { class: "phrases",
                 for phrase in phrases {
                     { let speaker = speaker.clone(); rsx! {
-                        button { class: "phrase", onclick: move |_| { text.set(phrase.into()); submit(&speaker, phrase.into(), voice(), speed(), id, status, last); }, "{phrase}" }
+                        button { class: "phrase", onclick: move |_| { replace_draft(phrase, text, status); submit(&speaker, phrase.into(), voice(), speed(), id, status, last); }, "{phrase}" }
                     } }
                 }
             }
