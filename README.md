@@ -2,6 +2,10 @@
 
 Local neural TTS on an Apple Silicon Mac, using MLX Audio and Kokoro.
 
+An offline Rust/Dioxus iPhone prototype lives in [`ios/`](ios/README.md).
+Use `./ios.sh desktop` for the Mac UI, `./ios.sh check --play` to test the Rust
+speech backend, or `./ios.sh build` to produce the iPhone app bundle.
+
 ## Setup
 
 ```sh

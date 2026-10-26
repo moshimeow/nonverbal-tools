@@ -2,3 +2,10 @@
 __pycache__/
 *.pyc
 .DS_Store
+.tools/
+ios/target/
+ios/assets/kokoro-*/
+ios/dist/
+ios/*.mobileprovision
+ios/*.entitlements
+ios/**/xcuserdata/

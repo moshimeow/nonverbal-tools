@@ -1,0 +1,6 @@
+[application]
+name = "Speak Pocket"
+
+[bundle]
+identifier = "com.moshi.speakpocket"
+publisher = "moshi"
