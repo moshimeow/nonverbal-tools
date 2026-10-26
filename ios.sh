@@ -46,7 +46,7 @@ case "${1:-help}" in
       -configuration Release -sdk iphoneos -destination "id=$DEVICE_UDID" \
       -derivedDataPath "$ROOT/ios/target/signing" \
       -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
-      "DEVELOPMENT_TEAM=$APPLE_TEAM_ID" build
+      "DEVELOPMENT_TEAM=$APPLE_TEAM_ID" clean build
     APP="$ROOT/ios/target/signing/Build/Products/Release-iphoneos/SpeakPocket.app"
     xcrun devicectl device install app --device "$IOS_DEVICE_ID" "$APP"
     xcrun devicectl device process launch --device "$IOS_DEVICE_ID" com.moshi.speakpocket

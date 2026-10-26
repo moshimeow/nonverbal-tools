@@ -72,6 +72,10 @@ SherpaOnnxC.framework, lets Xcode sign both, then installs and launches with
 `devicectl`. Device pairing/account login must be completed interactively.
 The CLI resolves the CoreDevice identifier to the hardware UDID Xcode requires
 and allows Xcode to register that destination with your signing team.
+It cleans the small signing wrapper before staging, so Xcode always signs the
+newly copied Rust executable. Cargo's compiled artifacts remain cached.
+For a personal development team, iOS may require trusting the developer under
+**Settings → General → VPN & Device Management** before the first launch.
 
 ## Validation and current limits
 
@@ -79,7 +83,8 @@ Verified on the development Mac: real English and Chinese generation/playback,
 finite non-silent 24 kHz output, Rust input-validation tests, Clippy, desktop UI
 typing without dropped characters, phrase selection, Repeat, Stop during playback
 and generation, speed control, empty-input handling, arm64 iOS compilation, and
-unsigned Xcode packaging. The initial speech
+signed Xcode packaging, signature verification, and installation on an iPhone 15
+Pro Max. First launch is awaiting developer trust on the phone. The initial speech
 check generated 3.27 seconds of English in 3.45 seconds and 4.31 seconds of
 Mandarin in 4.65 seconds; these are Mac observations, not iPhone benchmarks.
 
