@@ -3,6 +3,6 @@ dependencies:
   - pip
   - pip:
       - mlx-audio==0.5.9
-      - misaki[en]==0.9.4
+      - misaki[en,zh]==0.9.4
       - numpy
       - sounddevice

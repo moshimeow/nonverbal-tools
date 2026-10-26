@@ -18,14 +18,16 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 p = argparse.ArgumentParser(description="Type-to-speak with Kokoro")
-p.add_argument("--voice", default="af_heart", help="e.g. af_heart, af_bella, af_nova, bf_emma")
+p.add_argument("--voice", help="e.g. af_heart, bf_emma, zf_xiaoxiao; defaults to a voice matching --lang")
 p.add_argument("--speed", type=float, default=1.0)
-p.add_argument("--lang", default="a", help="a = American English, b = British English")
+p.add_argument("--lang", help="a = American English, b = British English, z = Mandarin; inferred from --voice when omitted")
 p.add_argument("--model", default="mlx-community/Kokoro-82M-bf16")
 p.add_argument("--device", help="output device name or part of it (e.g. 'BlackHole', 'Multi-Output')")
 p.add_argument("--phrases", default=os.path.join(HERE, "phrases.txt"))
 p.add_argument("--list-devices", action="store_true", help="print audio devices and exit")
 args = p.parse_args()
+args.lang = args.lang or (args.voice[0] if args.voice else "a")
+args.voice = args.voice or {"b": "bf_emma", "z": "zf_xiaoxiao"}.get(args.lang, "af_heart")
 
 import sounddevice as sd
 
@@ -43,7 +45,7 @@ if args.device:
 
 phrases = []
 if os.path.exists(args.phrases):
-    with open(args.phrases) as f:
+    with open(args.phrases, encoding="utf-8") as f:
         phrases = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
 if sys.version_info >= (3, 13):
@@ -70,8 +72,8 @@ def say(text):
         sd.wait()
 
 
-say("Ready.")  # warms up the model so the first real line is fast
-print(f"Ready. Voice: {voice}, speed: {speed}. Type and press Enter. /quit to exit.")
+say("准备好了。" if args.lang == "z" else "Ready.")  # warm up the model
+print(f"Ready. Voice: {voice}, language: {args.lang}, speed: {speed}. Type and press Enter. /quit to exit.")
 
 last = ""
 while True:
@@ -98,9 +100,15 @@ while True:
             print("No phrase with that number.")
             continue
     elif line.startswith("/voice "):
+        previous_voice, previous_lang = voice, args.lang
         voice = line.split(maxsplit=1)[1]
-        print(f"Voice: {voice}")
-        say("This is my new voice.")
+        args.lang = voice[0]
+        try:
+            say("这是我的新声音。" if args.lang == "z" else "This is my new voice.")
+        except Exception as e:
+            voice, args.lang = previous_voice, previous_lang
+            print(f"(couldn't switch voice: {e})")
+        print(f"Voice: {voice}, language: {args.lang}")
         continue
     elif line.startswith("/speed "):
         try:
