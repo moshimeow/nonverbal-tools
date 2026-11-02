@@ -53,6 +53,7 @@ pub struct SentMessage {
     pub location: Option<Location>,
     pub location_pending: bool,
     pub gap: f64,
+    pub playback: Option<String>,
 }
 pub struct History {
     db: Connection,
@@ -85,13 +86,20 @@ impl History {
             )?;
             tx.commit()?;
         }
+        if version < 2 {
+            db.execute_batch(
+                "ALTER TABLE sent_messages ADD COLUMN playback TEXT; PRAGMA user_version=2;",
+            )?;
+        }
+        // Pending speech cannot resume automatically after relaunch.
+        db.execute("UPDATE sent_messages SET playback='Not played: app closed before completion' WHERE playback='Queued'", [])?;
         // An interrupted location request cannot be recovered on a later launch.
         db.execute(
             "UPDATE sent_messages SET location_pending=0 WHERE location_pending<>0",
             [],
         )?;
         let entries = {
-            let mut query = db.prepare("SELECT id,text,sent_at,kind,latitude,longitude,accuracy,captured_at,location_pending,gap FROM sent_messages ORDER BY id")?;
+            let mut query = db.prepare("SELECT id,text,sent_at,kind,latitude,longitude,accuracy,captured_at,location_pending,gap,playback FROM sent_messages ORDER BY id")?;
             query
                 .query_map([], |r| {
                     let lat: Option<f64> = r.get(4)?;
@@ -115,6 +123,7 @@ impl History {
                         },
                         location_pending: r.get(8)?,
                         gap: r.get(9)?,
+                        playback: r.get(10)?,
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?
@@ -142,6 +151,7 @@ impl History {
             location: None,
             location_pending: true,
             gap: 0.0,
+            playback: None,
         });
         Ok(id)
     }
@@ -157,16 +167,25 @@ impl History {
         entry.location_pending = false;
         Ok(())
     }
+    pub fn set_playback(&mut self, id: i64, status: &str) -> Result<()> {
+        self.db.execute(
+            "UPDATE sent_messages SET playback=?1 WHERE id=?2",
+            params![status, id],
+        )?;
+        if let Some(entry) = Arc::make_mut(&mut self.entries)
+            .iter_mut()
+            .find(|e| e.id == id)
+        {
+            entry.playback = Some(status.into());
+        }
+        Ok(())
+    }
     pub fn set_gap(&mut self, id: i64, gap: f64) -> Result<()> {
         ensure!(
             gap.is_finite() && (0.0..=100_000.0).contains(&gap),
             "Invalid spacing"
         );
-        let Some(index) = self
-            .entries
-            .iter()
-            .position(|e| e.id == id && e.kind == MessageKind::Write)
-        else {
+        let Some(index) = self.entries.iter().position(|e| e.id == id) else {
             return Ok(());
         };
         self.db.execute(
@@ -215,13 +234,26 @@ mod tests {
             .unwrap();
         assert_eq!(old[1].gap, 0.0);
         assert!(store.set_gap(id, f64::NAN).is_err());
+        store.set_playback(id, "Not played: test failure").unwrap();
         store.record(text).unwrap();
+        let pending = store.entries.last().unwrap().id;
+        store.set_playback(pending, "Queued").unwrap();
         drop(store);
         let mut store = History::open(&path).unwrap();
         assert_eq!(store.entries.len(), 3);
         assert_eq!(store.entries[1].text, text);
         assert_eq!(store.entries[1].kind, MessageKind::Write);
         assert_eq!(store.entries[1].gap, 800.0);
+        assert_eq!(
+            store.entries[1].playback.as_deref(),
+            Some("Not played: test failure")
+        );
+        assert_eq!(
+            store.entries[2].playback.as_deref(),
+            Some("Not played: app closed before completion")
+        );
+        store.set_gap(pending, 400.0).unwrap();
+        assert_eq!(store.entries[2].gap, 400.0);
         assert!(store.entries[1].location.is_some());
         assert!(!store.entries[2].location_pending);
         store

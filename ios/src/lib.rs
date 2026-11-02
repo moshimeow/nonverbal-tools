@@ -1,3 +1,4 @@
+pub mod chunks;
 pub mod output;
 use anyhow::{Context, Result, bail};
 use sherpa_onnx::{
@@ -46,9 +47,10 @@ pub fn model_dir() -> PathBuf {
     if let Ok(exe) = std::env::current_exe()
         && let Some(parent) = exe.parent()
     {
-        let bundled = parent.join("kokoro");
-        if bundled.is_dir() {
-            return bundled;
+        for bundled in [parent.join("kokoro"), parent.join("../Resources/kokoro")] {
+            if bundled.is_dir() {
+                return bundled;
+            }
         }
     }
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/kokoro-multi-lang-v1_0")
@@ -59,6 +61,7 @@ pub struct SpeechEngine {
     english: frontend::English,
 }
 
+#[derive(Clone)]
 pub struct Audio {
     pub samples: Vec<f32>,
     pub sample_rate: u32,
@@ -162,9 +165,6 @@ pub fn validate_text(text: &str) -> Result<()> {
     if text.contains('\0') {
         bail!("Text contains an unsupported NUL character");
     }
-    if text.chars().count() > 2000 {
-        bail!("Please speak up to 2,000 characters at a time");
-    }
     Ok(())
 }
 
@@ -176,7 +176,7 @@ mod tests {
         assert!(validate_text("你好！现在是下午三点。").is_ok());
         assert!(validate_text("   ").is_err());
         assert!(validate_text("hello\0world").is_err());
-        assert!(validate_text(&"你".repeat(2001)).is_err());
+        assert!(validate_text(&"你".repeat(2001)).is_ok());
         assert!(validate_text(&"你".repeat(2000)).is_ok());
     }
 }

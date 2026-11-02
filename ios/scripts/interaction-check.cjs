@@ -1,48 +1,47 @@
-// Exercise the shipped handlers, including IME confirmation and pointer cancellation.
+// Run the shipped handlers with a deterministic clock and a minimal DOM.
 const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const handlers = {}, fields = {}, sends = [];
-let now = 1000;
+const handlers = {}, fields = {}, sends = [], saved = [], timers = new Map();
+let now = 1000, timerID = 0, toggles = 0;
 const document = {
- addEventListener(name, handler) { (handlers[name] ??= []).push(handler); },
+ addEventListener(n, f) { (handlers[n] ??= []).push(f); },
  getElementById(id) { return fields[id]; }
 };
-fields['speak-send'] = { click: () => sends.push('speak') };
-fields['write-send'] = { click: () => sends.push('write') };
-const saved = [];
-fields['write-gap-change'] = { dispatchEvent() { saved.push(this.value); } };
-vm.runInNewContext(readFileSync(`${__dirname}/../src/interaction.js`, 'utf8'), {
- document, window: { scrollBy() {} }, performance: { now: () => now }, scrollY: 0, innerHeight: 1000, Event: class {},
-});
 function fire(name, props = {}) {
- const e = { target: { matches: () => false }, preventDefault() { this.prevented = true; }, ...props };
- for (const f of handlers[name] ?? []) f(e);
+ const e = { target: { matches: () => false, closest: () => null }, preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...props };
+ for (const f of handlers[name] ?? []) { f(e); if (e.stopped) break; }
  return e;
 }
-function key(id, props = {}) { return fire('keydown', { target: { id, value: 'hello', matches: () => false }, key: 'Enter', ...props }); }
-assert.ok(key('message').prevented);
-assert.ok(key('write-message', { shiftKey: true }).prevented);
-assert.deepEqual(sends, ['speak','write']);
-key('write-message', { isComposing: true });
-key('write-message', { keyCode: 229 });
-fire('compositionend');
-assert.ok(key('write-message').prevented);
-assert.equal(sends.length, 2);
-now += 100;
-key('write-message');
-key('write-message', { repeat: true });
-assert.equal(sends.length, 3);
-const entry = { dataset: { id: '42', gap: '0' }, style: {} };
-const handle = { setPointerCapture() {}, closest: () => entry };
-fire('pointerdown', { target: { closest: () => handle }, pointerId: 1, clientY: 100 });
-fire('pointermove', { pointerId: 1, clientY: 400 });
-fire('pointerup', { pointerId: 1 });
-assert.equal(entry.style.paddingTop, '300px');
-assert.deepEqual(saved, ['42:300']);
-fire('pointerdown', { target: { closest: () => handle }, pointerId: 2, clientY: 400 });
-fire('pointermove', { pointerId: 2, clientY: 200 });
-fire('pointercancel');
-assert.equal(entry.style.paddingTop, '300px');
-assert.deepEqual(saved, ['42:300']);
-console.log('PASS: Enter, Shift-Enter, IME confirmation, repeat suppression, spacing drag and cancellation');
+fields.send = { click: () => sends.push('send') };
+fields['mode-toggle'] = { click() { const e = fire('click'); if (!e.prevented) toggles++; } };
+fields.conversation = { hidden: false };
+fields.message = { id:'message', value:'hello', dataset:{}, style:{}, scrollHeight:900, getClientRects:()=>[1] };
+fields['write-gap-change'] = { dispatchEvent() { saved.push(this.value); } };
+fields['draft-prepare'] = { dispatchEvent() {} };
+vm.runInNewContext(readFileSync(`${__dirname}/../src/interaction.js`, 'utf8'), {
+ document, window: { scrollBy(){}, addEventListener(){} }, localStorage: { getItem:()=>null },
+ performance:{now:()=>now}, scrollY:0, innerHeight:1000, Event:class{}, requestAnimationFrame:f=>f(),
+ setTimeout(f,delay) { const id=++timerID; timers.set(id,{f,at:now+delay}); return id; }, clearTimeout:id=>timers.delete(id),
+});
+function advance(ms) { now+=ms; for(const [id,t] of [...timers]) if(t.at<=now){ timers.delete(id); t.f(); } }
+function key(props={}) { return fire('keydown',{target:{...fields.message,matches:()=>false},key:'Enter',...props}); }
+assert.ok(key().prevented); assert.ok(key({shiftKey:true}).prevented); assert.equal(sends.length,2);
+key({isComposing:true}); key({keyCode:229}); fire('compositionend'); key(); assert.equal(sends.length,2);
+advance(100); key(); key({repeat:true}); assert.equal(sends.length,3);
+assert.equal(fields.message.style.height,'902px'); // No viewport cap.
+const target={closest:s=>s==='main'?{}:null};
+const down=()=>fire('pointerdown',{target,button:0,isPrimary:true,pointerId:1,clientX:10,clientY:10});
+down(); advance(551); assert.equal(toggles,1); assert.ok(fire('click').prevented); // Doesn't submit.
+down(); fire('pointermove',{pointerId:1,clientX:10,clientY:40}); advance(600); assert.equal(toggles,1);
+down(); fire('pointercancel'); advance(600); assert.equal(toggles,1);
+fire('keydown',{key:'M',metaKey:true,shiftKey:true}); assert.equal(toggles,2);
+const entry={dataset:{id:'42',gap:'0'},style:{}};
+const handle={setPointerCapture(){},closest:()=>entry};
+fire('pointerdown',{target:{closest:s=>s==='.spacing-handle'?handle:null},pointerId:3,clientY:100});
+fire('pointermove',{pointerId:3,clientY:400}); fire('pointerup',{pointerId:3});
+assert.equal(entry.style.paddingTop,'300px'); assert.deepEqual(saved,['42:300']);
+fire('pointerdown',{target:{closest:s=>s==='.spacing-handle'?handle:null},pointerId:4,clientY:400});
+fire('pointermove',{pointerId:4,clientY:200}); fire('pointercancel');
+assert.equal(entry.style.paddingTop,'300px'); assert.deepEqual(saved,['42:300']);
+console.log('PASS: Enter/IME, growing composer, hold toggle, click suppression, scroll cancellation, keyboard shortcut, spacing');

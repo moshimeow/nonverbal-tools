@@ -4,11 +4,21 @@ Offline type-to-speak for iPhone, with a Rust/Dioxus UI and a Rust speech worker
 calling sherpa-onnx. Emma speaks British English; Xiaoxiao speaks Mandarin.
 The existing Python/MLX CLI remains available at the workspace root.
 
-Play sends the draft to the bottom of a FIFO queue and clears the composer.
-Swipe any queue row left to stop/remove it; the × button does the same thing.
-The two most recently completed messages stay above the queue. Tap one to add a
-new copy at the bottom, keeping its original voice and speed. Open ☰ for language,
-voice, and speed settings. Settings apply to newly sent messages.
+The conversation sheet has one growing composer above newest-first sent messages.
+Hold anywhere on the conversation surface for 550 ms to switch Speak/Write. The
+send icon, playback behavior, and text size change; the draft and transcript stay
+put. The menu provides an accessible mode switch, and Control–Shift–M also works.
+The − / + controls adjust the current mode's size independently (defaults: Speak
+20 px, Write 36 px); mode and both sizes persist locally. Language, voice, speed,
+and copyable History live in ☰.
+
+Speak sends enter a FIFO audio queue; Write sends remain silent. Each saved message
+has a speaker button to play it using the current voice/speed, or a Stop button
+while queued/playing. Replay uses the same visible message instead of adding a
+second card. Each message stores its latest playback outcome, including failures
+and partial playback; failures leave the active queue automatically and appear
+beneath the message, with nothing to dismiss. Drag its handle to add spacing
+above it. All sent messages and spacing survive restart.
 
 Nothing is sent to a server. Dioxus renders the Rust UI in the platform WebView;
 inference and audio playback are native. English uses a Misaki-style Rust
@@ -29,6 +39,7 @@ Rust, and Python 3 (used only by the bundle-staging helper):
 ./ios.sh setup          # pinned local Dioxus CLI, Rust targets, bilingual model
 ./ios.sh check --play   # generate and play both voices using Rust
 ./ios.sh desktop       # Rust UI on the Mac, with Dioxus file watching
+./ios.sh desktop-build # self-contained ios/dist/macos/Speak Pocket.app
 ./ios.sh build         # unsigned arm64 iPhone app, iOS 18+
 ```
 
@@ -47,21 +58,21 @@ cargo run --manifest-path ios/Cargo.toml --release --bin queue-check
 osascript ios/scripts/ui-smoke.applescript
 ```
 
-A dedicated synthesis thread owns the model and phonemizer. A separate playback
-thread handles the queue and audio output, preparing at most one item ahead of
-the current message. Removing a playing item stops its sink promptly; removing a
-generating item invalidates its result and requests cancellation at the next
-inference callback. Failed rows remain removable and do not block later messages.
-The two replay cards contain completed messages only and stay in memory. The
-History tab separately saves **every sent message**, including replayed, canceled,
-and failed messages, in a local SQLite database in Application Support. It survives
-relaunches and app updates; uninstalling the app removes it. History starts with
-this version because earlier builds did not persist a transcript. Original text is
-preserved. Entries are selectable, have a native Copy button, and Copy all exports
-the complete transcript in chronological order. The list shows newest first and
-loads 100 rows at a time. Switching tabs keeps the unsent draft intact.
+A dedicated synthesis thread owns the model and phonemizer, loading them on app
+launch. A separate coordinator handles playback and persistence. It streams one
+phrase at a time, buffering at most two phrases each for the current/next message.
+Stopping invalidates in-flight inference and discards late results. Native audio
+setup remains asynchronous, so Stop and typing do not wait on audio activation.
 
-On iPhone, the native session uses `playAndRecord`, `defaultToSpeaker`, and an
+History saves every submitted message, its source, and its latest playback result
+in SQLite in Application Support. Replaying updates that result on the existing
+message, rather than recording another submission. History preserves original
+text, offers native Copy and Copy all, and loads 100 rows at a time. Opening
+History keeps the unsent draft intact. Updating preserves data; uninstalling
+removes it. In-flight speech from a previous launch is marked not played and is
+never automatically replayed.
+
+On iPhone, the native session uses `playAndRecord`, `defaultToSpeaker`, and a
 speaker override when needed before playback. If the output changes away from
 the speaker during speech, playback stops with a visible error. No input stream is opened or microphone
 audio captured; Apple's speaker override requires this session category. Bluetooth
@@ -106,12 +117,12 @@ For a personal development team, iOS may require trusting the developer under
 
 ## Validation and current limits
 
-Verified on the development Mac: English, invented-word and Mandarin synthesis
-and playback; FIFO queue order; generation overlapping playback; responsive
-current-item cancellation; removal without replaying stale audio; two-item
-history; Rust tests and Clippy. The updated UI was inspected at phone width and
-send/clear/queue insertion were exercised. The full UI smoke script requires an
-empty composer and refuses to overwrite an existing draft.
+The unified version passes Rust queue/cache/history tests, Clippy, JavaScript
+interaction tests (Enter/IME, hold/cancel/click suppression, auto-growth, spacing),
+and real English/Mandarin FIFO playback with cancellation and overlap. The native
+macOS UI was inspected at phone width. Global keyboard UI automation is avoided
+because the user actively changes window focus; the native smoke script is
+read-only. Physical iPhone gesture/playback acceptance remains a user test.
 
 The int8 model produced all-NaN audio for some short inputs (`woof!`, `Hello!`,
 `floof`). The full-precision model fixes those cases without altering the words.
@@ -126,16 +137,47 @@ xcrun devicectl device process launch --device YOUR_DEVICE_ID --terminate-existi
   --console com.moshi.speakpocket --speech-check
 ```
 
-The previous iPhone build's playback was confirmed by the user. The queue update
-was built, signed, installed and launched on their iPhone 15 Pro Max. The speaker
-override is built and installed; connected-AirPods routing and mid-sentence accessory
-changes still need a physical test. Chinese keyboard composition, interruptions,
-background/foreground transitions and phone synthesis latency need more testing.
+This remains a foreground app, with local-only inference and no App Store
+packaging. Mode/text sizes persist; language and speed reset on launch. There is
+no automatic mixed-language detection. Native IME behavior, interruptions, and
+background transitions still benefit from physical-device testing.
 
-This remains a foreground prototype: no saved phrase presets, persistent settings,
-phrase-audio cache, or App Store packaging. Unfamiliar-word pronunciations are
-best effort. English and Mandarin have separate frontends; mixed-language text
-is not automatically language-detected.
+### Lower-latency speech
+
+Kokoro's neural model evaluates a complete segment; its LSTM does not expose a
+reusable streaming state for arbitrary text edits. The standard Python pipeline
+packs roughly 510 phoneme characters with punctuation-aware breaks; our English
+frontend keeps its existing 400-phoneme safety limit. See the upstream
+[model](https://github.com/hexgrad/kokoro/blob/main/kokoro/model.py) and
+[pipeline](https://github.com/hexgrad/kokoro/blob/main/kokoro/pipeline.py).
+
+The app now splits text into shorter phrases before inference: sentence endings,
+then sufficiently long comma/semicolon clauses, then word boundaries at roughly
+160 English or 60 Mandarin characters. Extremely long unbroken tokens are split
+at a Unicode boundary. The first phrase can play while later phrases generate.
+This is phrase streaming, not frame-by-frame streaming within the model. Shorter
+context can change prosody, and playback may wait at a boundary if generation
+falls behind. The composer and sends no longer have the old 2,000-character cap.
+
+After a 650 ms typing pause in Speak mode, idle inference prepares the first draft
+phrase without playing or recording it. A four-entry, eight-megabyte RAM cache
+requires an exact phrase/voice/speed match. Submitted work takes priority over
+speculation; changed drafts invalidate in-flight preparation, and stale results
+cannot reach playback. Write mode does not prepare speech. The cache is not saved.
+
+On this development Mac, a sample English message took 3.680 s to generate whole
+versus 0.313 s for its first phrase (four phrases total: 4.135 s for 10.9 s audio).
+Mandarin took 4.947 s whole versus 0.550 s first phrase (4.926 s for 11.0 s audio).
+These are warm-model generation measurements, not iPhone tap-to-sound numbers.
+Repeat with:
+
+```sh
+cargo run --locked --release --manifest-path ios/Cargo.toml --bin latency-check
+```
+
+The desktop package includes the model and licenses in Contents/Resources and
+uses the exact same interface. It is locally ad-hoc signed, not notarized for
+public distribution; it can be opened directly or moved into Applications.
 
 ## Dependencies and model provenance
 
@@ -154,24 +196,18 @@ is not automatically language-detected.
   English phonemization with embedded neural out-of-vocabulary prediction. Its
   license and notices are bundled in `licenses/loqui-g2p/` inside the app.
 - [Apple speaker override](https://developer.apple.com/documentation/avfaudio/avaudiosession/overrideoutputaudioport(_:)):
-  native speaker routing, reapplied after route changes.
+  native speaker routing with route-change failure handling.
 
 - SQLite (via bundled rusqlite) stores the local sent-message transcript; UIKit/AppKit handle clipboard writes.
 
 ### Write and message metadata
 
-The pencil (Write) tab is a silent, newest-first conversation sheet. The speaker icon returns to Speak;
-the clock (History) lives in the hamburger menu. The text-size buttons share the top row
-with the outline-icon tabs. The live draft sits at
-its top; Enter or Send saves it and opens a fresh draft above it. The − / + buttons
-change text size. Drag a message's small horizontal handle down or up to change
-only the blank space above that message. Spacing and messages survive a restart;
-there is no message-count limit or pagination in Write. A focused handle also
-accepts the up/down arrow keys for spacing.
-
-Enter (including Shift-Enter) submits in Speak and Write. Enter used to confirm
-Chinese IME composition does not send the message. Write messages share the
-copyable History tab with spoken messages, labeled by their source.
+The unified sheet displays all messages, newest first. Spacing handles move only
+the blank space above a message, never reorder it. They also accept up/down arrow
+keys. There is no message-count limit or pagination on the conversation sheet.
+Enter (including Shift-Enter) submits in either mode; Enter used to confirm IME
+composition does not send. Long-press excludes spacing drags and the History/
+settings panels so those retain their normal interactions.
 
 History shows local date and time for all messages, including existing history.
 New sends request a one-shot Core Location fix when permission is allowed; the
@@ -186,8 +222,8 @@ Additional checks:
 ```sh
 node ios/scripts/interaction-check.cjs
 cargo test --locked --manifest-path ios/Cargo.toml --lib
-# Launch desktop with an isolated SPEAK_DATA_DIR before running this UI test:
-osascript ios/scripts/write-smoke.applescript
+# Read-only native control inspection; does not change window focus:
+osascript ios/scripts/ui-smoke.applescript
 ```
 
 ### Music pause and resume
@@ -207,8 +243,7 @@ operations. Completion callbacks and a duration-plus-three-seconds watchdog
 report playback success or failure. Desktop playback continues to use Rodio.
 
 Session release failures retain the active state, appear in the UI, and get up to
-three delayed retries. Interrupted or failed speech is not added to the completed
-replay cards. A later message can attempt activation again.
+three delayed retries. Interrupted or failed speech is recorded beneath its message. A later message can attempt activation again.
 
 The earlier mixing and dualRoute experiments are preserved on
 `backup/dualroute-experiment`. The dualRoute version played audibly in user testing

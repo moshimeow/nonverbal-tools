@@ -29,6 +29,11 @@ case "${1:-help}" in
     cd "$ROOT/ios"
     exec "$DX" serve --desktop --release --bin speak-pocket
     ;;
+  desktop-build)
+    cd "$ROOT/ios"
+    "$DX" build --desktop --release --bin speak-pocket --locked
+    python3 scripts/package-desktop.py
+    ;;
   build)
     cd "$ROOT/ios"
     "$DX" build --ios --target aarch64-apple-ios --release --bin speak-pocket --locked
@@ -52,7 +57,7 @@ case "${1:-help}" in
     xcrun devicectl device process launch --device "$IOS_DEVICE_ID" com.moshi.speakpocket
     ;;
   *)
-    echo 'Usage: ./ios.sh setup | check [--play] | desktop | build | deploy'
+    echo 'Usage: ./ios.sh setup | check [--play] | desktop | desktop-build | build | deploy'
     echo 'Deploy requires APPLE_TEAM_ID, IOS_DEVICE_ID, and Xcode account/signing setup.'
     ;;
 esac

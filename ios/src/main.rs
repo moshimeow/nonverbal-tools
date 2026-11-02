@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use speak_pocket::{
     Voice,
-    worker::{Item, Phase, Snapshot, Speaker},
+    worker::{Snapshot, Speaker},
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -45,36 +45,33 @@ fn main() {
 }
 
 fn send_draft(speaker: Speaker, voice: Voice, speed: f32, mut error: Signal<String>, write: bool) {
-    // Keep the JS channel alive until persistence/enqueue acknowledges the send.
-    // This also preserves the text in the WebView if writing the history fails.
     spawn(async move {
-        let id = if write { "write-message" } else { "message" };
-        let mut script = document::eval(&format!(
+        let mut script = document::eval(
             r#"
-            const field = document.getElementById('{id}');
+            const field = document.getElementById('message');
+            if (field.dataset.sending === 'true') { dioxus.send(''); return; }
+            field.dataset.sending = 'true';
             const text = field.value;
-            if (text.trim()) {{
+            if (text.trim()) {
                 field.value = '';
-                field.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                field.focus();
-                if (field.id === 'write-message') window.scrollTo(0, 0);
-            }}
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+                field.focus(); window.scrollTo(0, 0);
+            }
             dioxus.send(text);
             const accepted = await dioxus.recv();
-            if (!accepted) {{
+            if (!accepted) {
                 field.value = text + field.value;
-                field.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            }}
-        "#
-        ));
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            delete field.dataset.sending;
+        "#,
+        );
         match script.recv::<String>().await {
             Ok(text) => {
                 let result = if text.trim().is_empty() {
                     Ok(())
-                } else if write {
-                    speaker.write(text).await
                 } else {
-                    speaker.speak(text, voice, speed).map(|_| ())
+                    speaker.send(text, voice, speed, write).await
                 };
                 let _ = script.send(result.is_ok());
                 error.set(result.err().map(|e| e.to_string()).unwrap_or_default());
@@ -102,59 +99,37 @@ fn ViewIcon(kind: u8) -> Element {
 }
 
 #[component]
-fn QueueRow(item: Item, onremove: EventHandler<u64>) -> Element {
-    let mut start = use_signal(|| None::<(f64, f64)>);
-    let mut offset = use_signal(|| 0.0f64);
-    let id = item.id;
-    let playing = matches!(item.phase, Phase::Playing | Phase::Starting);
-    let failed = matches!(item.phase, Phase::Failed(_));
-    rsx! {
-        div { class: "swipe-row",
-            div { class: "swipe-under", aria_hidden: "true", if playing { "Stop" } else { "Remove" } }
-            article {
-                class: if playing { "queue-card playing" } else if failed { "queue-card failed" } else { "queue-card" },
-                style: "transform: translateX({offset}px)",
-                onpointerdown: move |e| { let p = e.client_coordinates(); start.set(Some((p.x, p.y))); },
-                onpointermove: move |e| {
-                    if let Some((x, y)) = start() {
-                        let p = e.client_coordinates();
-                        if (p.x - x).abs() > (p.y - y).abs() { offset.set((p.x - x).clamp(-120.0, 0.0)); }
-                    }
-                },
-                onpointerup: move |e| {
-                    if let Some((x, y)) = start() {
-                        let p = e.client_coordinates();
-                        if x - p.x > 65.0 && (p.y - y).abs() < (x - p.x) / 2.0 { onremove.call(id); }
-                    }
-                    start.set(None); offset.set(0.0);
-                },
-                onpointercancel: move |_| { start.set(None); offset.set(0.0); },
-                div { class: "item-copy",
-                    p { class: "item-text", "{item.text}" }
-                    small { class: "item-status", "{item.phase.label()} · {item.voice.name()}" }
-                }
-                button { class: "remove", aria_label: if playing { "Stop this message" } else { "Remove this message" },
-                    onclick: move |_| onremove.call(id), "×" }
-            }
-        }
-    }
-}
-
-#[component]
 fn App() -> Element {
     let mut text = use_signal(String::new);
     let mut voice = use_signal(|| Voice::Emma);
     let mut speed = use_signal(|| 1.0f32);
     let mut menu = use_signal(|| false);
-    let mut tab = use_signal(|| 0u8);
-    let mut write_text = use_signal(String::new);
-    let mut font_size = use_signal(|| 36u32);
+    let mut history_open = use_signal(|| false);
+    let mut write_mode = use_signal(|| false);
+    let mut speak_size = use_signal(|| 20u32);
+    let mut write_size = use_signal(|| 36u32);
+    let font_size = if write_mode() {
+        write_size()
+    } else {
+        speak_size()
+    };
+    use_effect(move || {
+        document::eval(&format!(
+            r#"
+            try {{ if (window.preferencesLoaded) localStorage.setItem('speak-preferences', '{}:{}:{}'); }} catch (_) {{}}
+            if (window.resizeComposer) requestAnimationFrame(window.resizeComposer);
+        "#,
+            write_mode(),
+            speak_size(),
+            write_size()
+        ));
+    });
     use_effect(|| {
         document::eval(include_str!("interaction.js"));
     });
     let mut history_limit = use_signal(|| 100usize);
     let mut copied = use_signal(String::new);
-    let mut error = use_signal(String::new);
+    let error = use_signal(String::new);
     let mut state = use_signal(Snapshot::default);
     let (speaker, receiver) = use_hook(|| {
         let (speaker, receiver) = Speaker::start();
@@ -168,8 +143,20 @@ fn App() -> Element {
             }
         }
     });
+    let refresh_draft = speaker.clone();
+    use_effect(move || {
+        let writing = write_mode();
+        let selected_voice = voice();
+        let selected_speed = speed();
+        let draft_text = text.peek();
+        refresh_draft.prepare(
+            if writing { "" } else { &draft_text },
+            selected_voice,
+            selected_speed,
+        );
+    });
     let send = speaker.clone();
-    let write_send = speaker.clone();
+    let prepare = speaker.clone();
     let spacing = speaker.clone();
     let chinese = voice() == Voice::Xiaoxiao;
     rsx! {
@@ -180,24 +167,25 @@ fn App() -> Element {
             nav {
                 button { class: "menu-toggle", aria_label: "Menu", aria_expanded: menu().to_string(), aria_controls: "settings",
                     onclick: move |_| menu.toggle(), if menu() { "×" } else { "☰" } }
-                div { class: "tabs", role: "tablist", aria_label: "View",
-                    button { role: "tab", id: "speak-tab", aria_label: "Speak", title: "Speak", aria_controls: "speech-view", aria_selected: (tab() == 0).to_string(),
-                        class: if tab() == 0 { "tab active" } else { "tab" }, onclick: move |_| { tab.set(0); menu.set(false); }, ViewIcon { kind: 0 } }
-                    button { role: "tab", id: "write-tab", aria_label: "Write", title: "Write", aria_controls: "write-view", aria_selected: (tab() == 1).to_string(),
-                        class: if tab() == 1 { "tab active" } else { "tab" }, onclick: move |_| { tab.set(1); menu.set(false); }, ViewIcon { kind: 1 } }
-
+                if history_open() {
+                    button { class: "copy", aria_label: "Back to conversation", onclick: move |_| history_open.set(false), "←" }
                 }
-                if tab() == 1 {
                 div { class: "write-toolbar",
-                    button { class: "copy", aria_label: "Smaller text", disabled: font_size() <= 20, onclick: move |_| font_size.set((font_size() - 4).max(20)), "−" }
-                    button { class: "copy", aria_label: "Larger text", disabled: font_size() >= 96, onclick: move |_| font_size.set((font_size() + 4).min(96)), "+" }
+                    button { class: "copy", aria_label: "Smaller text", disabled: font_size <= 16,
+                        onclick: move |_| { if write_mode() { write_size.set((write_size() - 4).max(16)); } else { speak_size.set((speak_size() - 4).max(16)); } }, "−" }
+                    button { class: "copy", aria_label: "Larger text", disabled: font_size >= 96,
+                        onclick: move |_| { if write_mode() { write_size.set((write_size() + 4).min(96)); } else { speak_size.set((speak_size() + 4).min(96)); } }, "+" }
                 }
-                }
+
             }
             if menu() {
                 section { id: "settings", class: "settings", aria_label: "Speech settings",
                     button { class: "history-menu", aria_label: "History", title: "History", aria_controls: "history-view",
-                        onclick: move |_| { tab.set(2); menu.set(false); copied.set(String::new()); }, ViewIcon { kind: 2 } }
+                        onclick: move |_| { history_open.set(true); menu.set(false); copied.set(String::new()); }, ViewIcon { kind: 2 } }
+                    button { class: "copy", onclick: move |_| { write_mode.toggle(); menu.set(false); },
+                        if write_mode() { "Switch to speaking" } else { "Switch to writing" }
+                    }
+                    small { "Hold anywhere in the conversation to switch. Control–Shift–M also works." }
                     label { r#for: "language", "Language" }
                     select { id: "language", value: if chinese { "zh" } else { "en" },
                         onchange: move |e| voice.set(if e.value() == "zh" { Voice::Xiaoxiao } else { Voice::Emma }),
@@ -219,7 +207,7 @@ fn App() -> Element {
             }
             if let Some(message) = state().audio_error { p { class: "error", role: "alert", "{message}" } }
             if let Some(message) = state().history_error { p { class: "error", role: "alert", "{message}" } }
-            if tab() == 2 {
+            if history_open() {
                 section { id: "history-view", aria_label: "History", class: "history",
                     div { class: "history-toolbar",
                         span { "{state().history.len()} sent messages" }
@@ -239,6 +227,7 @@ fn App() -> Element {
                                 None => "Location not recorded".into(),
                             }} }
                             p { "{item.text}" }
+                            if let Some(status) = &item.playback { small { class: "history-meta", "{status}" } }
                             button { class: "copy", aria_label: "Copy message {item.id}", onclick: move |_| {
                                 copied.set(match speak_pocket::platform::copy_text(&item.text) { Ok(()) => "Copied message".into(), Err(e) => e.to_string() });
                             }, "Copy" }
@@ -247,53 +236,58 @@ fn App() -> Element {
                     if state().history.len() > history_limit() { button { class: "copy", onclick: move |_| history_limit += 100, "Show older messages" } }
                 }
             }
-            section { id: "write-view", role: "tabpanel", aria_labelledby: "write-tab", hidden: tab() != 1,
-                textarea { id: "write-message", aria_label: "Write message", rows: 3, maxlength: 2000, initial_value: "", placeholder: "Type here…",
-                    style: "font-size: {font_size}px", oninput: move |e| write_text.set(e.value()) }
-                button { id: "write-send", class: "send write-send", aria_label: "Send message", title: "Send message", disabled: write_text().trim().is_empty(), onclick: move |_| send_draft(write_send.clone(), voice(), speed(), error, true),
-                    svg { width: "24", height: "24", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round", "aria-hidden": "true", "focusable": "false", path { d: "M12 20V4m-7 7 7-7 7 7" } }
+            button { id: "mode-toggle", hidden: true, onclick: move |_| write_mode.toggle() }
+            input { id: "preferences", r#type: "hidden", oninput: move |e| {
+                let value = e.value(); let parts: Vec<_> = value.split(':').collect();
+                if parts.len() == 3 {
+                    write_mode.set(parts[0] == "true");
+                    if let Ok(n) = parts[1].parse::<u32>() { speak_size.set(n.clamp(16, 96)); }
+                    if let Ok(n) = parts[2].parse::<u32>() { write_size.set(n.clamp(16, 96)); }
+                }
+            } }
+            section { id: "conversation", aria_label: "Conversation", hidden: history_open(),
+                "data-mode": if write_mode() { "write" } else { "speak" }, style: "font-size: {font_size}px",
+                textarea { id: "message", aria_label: "Message", rows: 2, initial_value: "", placeholder: "Type here…",
+                    oninput: move |e| text.set(e.value()) }
+                button { id: "send", class: "send", aria_label: if write_mode() { "Send message" } else { "Speak message" },
+                    title: if write_mode() { "Send message · hold to switch mode" } else { "Speak message · hold to switch mode" },
+                    disabled: text().trim().is_empty(), onclick: move |_| send_draft(send.clone(), voice(), speed(), error, write_mode()),
+                    if write_mode() {
+                        svg { width: "24", height: "24", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round", "aria-hidden": "true", path { d: "M12 20V4m-7 7 7-7 7 7" } }
+                    } else { ViewIcon { kind: 0 } }
                 }
                 if !error().is_empty() { p { role: "alert", class: "error", "{error}" } }
+                input { id: "draft-prepare", r#type: "hidden", oninput: move |e| {
+                    let value = e.value();
+                    prepare.prepare(if write_mode() { "" } else { &value }, voice(), speed());
+                } }
                 input { id: "write-gap-change", r#type: "hidden", oninput: move |e| {
                     if let Some((id, gap)) = e.value().split_once(':')
                         && let (Ok(id), Ok(gap)) = (id.parse::<i64>(), gap.parse::<f64>()) { spacing.set_gap(id, gap); }
                 } }
-                for item in state().history.iter().rev().filter(|i| i.kind == speak_pocket::history::MessageKind::Write) {
-                    article { key: "write-{item.id}", class: "write-entry", "data-id": "{item.id}", "data-gap": "{item.gap}", style: "padding-top: {item.gap}px; font-size: {font_size}px",
-                        button { class: "spacing-handle", aria_label: "Adjust space above message {item.id}", title: "Drag to add space above this message", "━" }
-                        p { "{item.text}" }
-                    }
-                }
-            }
-            div { id: "speech-view", class: "speech-view", role: "tabpanel", aria_labelledby: "speak-tab", hidden: tab() != 0,
-            div { class: "stream",
-                if !state().recent.is_empty() {
-                    section { class: "recent", aria_label: "Recently spoken",
-                        for item in state().recent {
-                            { let replay = speaker.clone(); rsx! {
-                                button { key: "recent-{item.id}", class: "recent-item", aria_label: "Say again: {item.text}",
-                                    onclick: move |_| { if let Err(e) = replay.speak(item.text.clone(), item.voice, item.speed) { error.set(e.to_string()); } },
-                                    span { "{item.text}" } small { "↻ Say again" }
+                for item in state().history.iter().rev() {
+                    { let replay = speaker.clone(); let stop = speaker.clone();
+                      let id = item.id;
+                      let active = state().queue.iter().find(|q| q.history_id == Some(id)).cloned();
+                      rsx! {
+                        article { key: "message-{id}", class: "write-entry", "data-id": "{id}", "data-gap": "{item.gap}", style: "padding-top: {item.gap}px",
+                            button { class: "spacing-handle", aria_label: "Adjust space above message {id}", title: "Drag to add space above this message", "━" }
+                            p { "{item.text}" }
+                            div { class: "message-actions",
+                                if let Some(active) = active {
+                                    button { class: "message-speak", aria_label: "Stop message {id}", onclick: move |_| stop.remove(active.id), "■" }
+                                    small { role: "status", "{active.phase.label()}" }
+                                } else {
+                                    button { class: "message-speak", aria_label: "Speak message {id}", title: "Speak", onclick: move |_| replay.replay(id, voice(), speed()), ViewIcon { kind: 0 } }
                                 }
-                            } }
+                            }
+                            if let Some(status) = &item.playback {
+                                if status.starts_with("Not ") { p { class: "error", "{status}" } }
+                            }
                         }
+                      }
                     }
                 }
-                section { class: "queue", aria_label: "Speech queue",
-                    for item in state().queue {
-                        { let remove = speaker.clone(); rsx! { QueueRow { key: "{item.id}", item, onremove: move |id| remove.remove(id) } } }
-                    }
-                }
-            }
-            div { class: "composer",
-                label { class: "sr-only", r#for: "message", "Message" }
-                textarea { id: "message", rows: 3, maxlength: 2000, initial_value: "",
-                    placeholder: if chinese { "输入你想说的话……" } else { "Type something…" },
-                    oninput: move |e| text.set(e.value()),
-                }
-                button { id: "speak-send", class: "send", disabled: text().trim().is_empty(), onclick: move |_| send_draft(send.clone(), voice(), speed(), error, false), "▶ Play" }
-                if !error().is_empty() { p { role: "alert", class: "error", "{error}" } }
-            }
             }
         }
     }
