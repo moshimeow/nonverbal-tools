@@ -5,9 +5,9 @@ calling sherpa-onnx. Emma speaks British English; Xiaoxiao speaks Mandarin.
 The existing Python/MLX CLI remains available at the workspace root.
 
 The conversation sheet has one growing composer above newest-first sent messages.
-Hold anywhere on the conversation surface for 550 ms to switch Speak/Write. The
+Double-tap text or empty space on the conversation surface to switch Speak/Write. The
 send icon, playback behavior, and text size change; the draft and transcript stay
-put. The menu provides an accessible mode switch. On desktop, Tab switches modes
+put. The square swap button beside the menu provides an accessible mode switch. On desktop, Tab switches modes
 while keeping the composer focused; Shift–Tab navigates controls. Tab retains its
 normal behavior inside settings/History and during IME composition.
 The − / + controls adjust the current mode's size independently (defaults: Speak
@@ -123,7 +123,7 @@ For a personal development team, iOS may require trusting the developer under
 ## Validation and current limits
 
 The unified version passes Rust queue/cache/history tests, Clippy, JavaScript
-interaction tests (Enter/IME, hold/cancel/click suppression, auto-growth, spacing),
+interaction tests (Enter/IME, double-tap/cancel/click suppression, auto-growth, spacing),
 and real English/Mandarin FIFO playback with cancellation and overlap. The native
 macOS UI was inspected at phone width. Global keyboard UI automation is avoided
 because the user actively changes window focus; the native smoke script is

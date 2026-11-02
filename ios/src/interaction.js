@@ -40,32 +40,39 @@ if (!window.speakInteractions) {
     document.addEventListener('compositionstart', () => clearTimeout(draftTimer));
     document.addEventListener('compositionend', () => { clearTimeout(draftTimer); draftTimer = setTimeout(prepare, 650); });
     window.addEventListener('resize', window.resizeComposer);
-    let held, holdTimer, suppressClick = false;
-    const clearHold = () => { clearTimeout(holdTimer); held = null; };
+    let pressed, lastTap, suppressClick = false;
+    const clearTap = () => { pressed = null; lastTap = null; };
     document.addEventListener('pointerdown', e => {
-        clearHold();
-        if (e.button !== 0 || !e.isPrimary || !e.target.closest('main') || document.getElementById('conversation').hidden || e.target.closest('.spacing-handle, #settings, #history-view')) return;
+        pressed = null;
         suppressClick = false;
-        held = { x: e.clientX, y: e.clientY, pointer: e.pointerId };
-        holdTimer = setTimeout(() => {
-            if (!held) return;
-            document.getElementById('mode-toggle').click();
-            suppressClick = true;
-            clearHold();
-        }, 550);
+        // Controls keep their normal single-tap actions; text and empty space switch mode.
+        if (e.button !== 0 || !e.isPrimary || !e.target.closest('main') || document.getElementById('conversation').hidden || e.target.closest('button, a, select, input, .spacing-handle, #settings, #history-view')) {
+            lastTap = null;
+            return;
+        }
+        pressed = { x: e.clientX, y: e.clientY, pointer: e.pointerId, at: performance.now() };
     });
     document.addEventListener('pointermove', e => {
-        if (held && (Math.hypot(e.clientX - held.x, e.clientY - held.y) > 12 || e.pointerId !== held.pointer)) clearHold();
+        if (pressed && (Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) > 12 || e.pointerId !== pressed.pointer)) clearTap();
     });
-    document.addEventListener('pointerup', clearHold);
-    document.addEventListener('pointercancel', () => { clearHold(); suppressClick = false; });
-    document.addEventListener('scroll', clearHold, true);
+    document.addEventListener('pointerup', e => {
+        if (!pressed || e.pointerId !== pressed.pointer) return;
+        const tap = pressed;
+        pressed = null;
+        const now = performance.now();
+        if (now - tap.at > 300 || Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 12) { lastTap = null; return; }
+        if (lastTap && now - lastTap.at <= 350 && Math.hypot(tap.x - lastTap.x, tap.y - lastTap.y) <= 24) {
+            lastTap = null;
+            document.getElementById('mode-toggle').click();
+            suppressClick = true;
+            e.preventDefault();
+        } else lastTap = { ...tap, at: now };
+    });
+    document.addEventListener('pointercancel', () => { clearTap(); suppressClick = false; });
+    document.addEventListener('scroll', clearTap, true);
     document.addEventListener('click', e => {
         if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopImmediatePropagation(); }
     }, true);
-    document.addEventListener('contextmenu', e => {
-        if (e.target.closest('#conversation')) e.preventDefault();
-    });
     document.addEventListener('keydown', e => {
         if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'm') {
             e.preventDefault(); document.getElementById('mode-toggle').click();

@@ -180,6 +180,13 @@ fn App() -> Element {
             nav {
                 button { class: "menu-toggle", aria_label: "Menu", aria_expanded: menu().to_string(), aria_controls: "settings",
                     onclick: move |_| menu.toggle(), if menu() { "×" } else { "☰" } }
+                button { class: "mode-switch", aria_label: if write_mode() { "Switch to speaking" } else { "Switch to writing" },
+                    title: if write_mode() { "Switch to speaking" } else { "Switch to writing" },
+                    onclick: move |_| write_mode.toggle(),
+                    svg { width: "22", height: "22", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
+                        path { d: "M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4" }
+                    }
+                }
                 if history_open() {
                     button { class: "copy", aria_label: "Back to conversation", onclick: move |_| history_open.set(false), "←" }
                 }
@@ -195,10 +202,7 @@ fn App() -> Element {
                 section { id: "settings", class: "settings", aria_label: "Speech settings",
                     button { class: "history-menu", aria_label: "History", title: "History", aria_controls: "history-view",
                         onclick: move |_| { history_open.set(true); menu.set(false); copied.set(String::new()); }, ViewIcon { kind: 2 } }
-                    button { class: "copy", onclick: move |_| { write_mode.toggle(); menu.set(false); },
-                        if write_mode() { "Switch to speaking" } else { "Switch to writing" }
-                    }
-                    small { "Hold anywhere in the conversation to switch. Desktop: Tab switches mode; Shift–Tab navigates controls." }
+                    small { "Double-tap the conversation to switch. Desktop: Tab switches mode; Shift–Tab navigates controls." }
                     label { r#for: "language", "Language" }
                     select { id: "language", value: if chinese { "zh" } else { "en" },
                         onchange: move |e| voice.set(if e.value() == "zh" { Voice::Xiaoxiao } else { Voice::Emma }),
@@ -270,7 +274,7 @@ fn App() -> Element {
                         SendIcon { write: !write_mode() }
                     }
                     button { id: "send", class: "send", aria_label: if write_mode() { "Send message" } else { "Speak message" },
-                        title: if write_mode() { "Send message · hold to switch mode" } else { "Speak message · hold to switch mode" },
+                        title: if write_mode() { "Send message" } else { "Speak message" },
                         disabled: text().trim().is_empty(), onclick: move |_| send_draft(send.clone(), voice(), speed(), error, write_mode()),
                         SendIcon { write: write_mode() }
                     }

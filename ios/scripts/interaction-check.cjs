@@ -34,9 +34,16 @@ advance(100); key(); key({repeat:true}); assert.equal(sends.length,3);
 assert.equal(fields.message.style.height,'902px'); // No viewport cap.
 const target={closest:s=>s==='main'?{}:null};
 const down=()=>fire('pointerdown',{target,button:0,isPrimary:true,pointerId:1,clientX:10,clientY:10});
-down(); advance(551); assert.equal(toggles,1); assert.ok(fire('click').prevented); // Doesn't submit.
-down(); fire('pointermove',{pointerId:1,clientX:10,clientY:40}); advance(600); assert.equal(toggles,1);
-down(); fire('pointercancel'); advance(600); assert.equal(toggles,1);
+const up=()=>fire('pointerup',{pointerId:1,clientX:10,clientY:10});
+const tap=()=>{down();advance(30);return up();};
+tap(); assert.equal(toggles,0); advance(100); assert.ok(tap().prevented); assert.equal(toggles,1);
+assert.ok(fire('click').prevented); assert.ok(!fire('click').prevented);
+down(); advance(551); up(); assert.equal(toggles,1); // Holding no longer switches.
+down(); fire('pointermove',{pointerId:1,clientX:10,clientY:40}); up(); tap(); assert.equal(toggles,1);
+fire('pointercancel'); tap(); fire('scroll'); tap(); assert.equal(toggles,1);
+fire('pointercancel'); tap(); advance(400); tap(); assert.equal(toggles,1);
+fire('pointercancel'); tap(); fire('pointerdown',{target:{closest:s=>s==='.spacing-handle'?null:{}},button:0,isPrimary:true}); up(); tap(); assert.equal(toggles,1); // Controls break a double tap.
+fire('pointercancel');
 fire('keydown',{key:'M',metaKey:true,shiftKey:true}); assert.equal(toggles,2);
 const entry={dataset:{id:'42',gap:'0'},style:{}};
 const handle={setPointerCapture(){},closest:()=>entry};
@@ -55,4 +62,4 @@ fields.main.dataset.desktop='false'; assert.ok(!key({key:'Tab'}).prevented);
 fields.main.dataset.desktop='true';
 const settingsTarget={...fields.message,matches:()=>false,closest:()=>({})};
 assert.ok(!key({key:'Tab',target:settingsTarget}).prevented);
-console.log('PASS: Enter/IME, growing composer, holds, spacing, desktop Tab, Shift-Tab navigation, settings focus, iPhone exclusion');
+console.log('PASS: Enter/IME, growing composer, double taps, spacing, desktop Tab, Shift-Tab navigation, settings focus, iPhone exclusion');
