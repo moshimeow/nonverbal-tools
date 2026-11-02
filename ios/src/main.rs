@@ -112,6 +112,7 @@ fn SendIcon(write: bool) -> Element {
 
 #[component]
 fn App() -> Element {
+    let mut show_chunks = use_signal(|| false);
     let mut has_text = use_signal(|| false);
     let mut voice = use_signal(|| Voice::Emma);
     let mut speed = use_signal(|| 1.0f32);
@@ -160,6 +161,10 @@ fn App() -> Element {
         let _ = (write_mode(), voice(), speed());
         document::eval("if (window.prepareDraft) window.prepareDraft();");
     });
+    use_effect(move || {
+        let _ = (show_chunks(), state(), voice(), speed());
+        document::eval("requestAnimationFrame(() => window.paintPrepared?.());");
+    });
     let send = speaker.clone();
     let alternate_send = speaker.clone();
     let prepare = speaker.clone();
@@ -196,6 +201,10 @@ fn App() -> Element {
                     button { class: "history-menu", aria_label: "History", title: "History", aria_controls: "history-view",
                         onclick: move |_| { history_open.set(true); menu.set(false); copied.set(String::new()); }, ViewIcon { kind: 2 } }
                     small { "Double-tap the conversation to switch. Desktop: Tab switches mode; Shift–Tab navigates controls." }
+                    label { class: "chunk-option",
+                        input { r#type: "checkbox", checked: show_chunks(), onchange: move |e| show_chunks.set(e.checked()) }
+                        "Highlight prepared audio"
+                    }
                     label { r#for: "language", "Language" }
                     select { id: "language", value: if chinese { "zh" } else { "en" },
                         onchange: move |e| voice.set(if e.value() == "zh" { Voice::Xiaoxiao } else { Voice::Emma }),
@@ -257,7 +266,15 @@ fn App() -> Element {
             } }
             section { id: "conversation", aria_label: "Conversation", hidden: history_open(),
                 "data-mode": if write_mode() { "write" } else { "speak" }, style: "font-size: {font_size}px",
-                textarea { id: "message", aria_label: "Message", rows: 2, initial_value: "", placeholder: "Type here…" }
+                div { id: "composer", class: if show_chunks() { "composer show-chunks" } else { "composer" }, "data-chinese": chinese.to_string(),
+                    div { id: "prepared-overlay", "aria-hidden": "true" }
+                    textarea { id: "message", aria_label: "Message", rows: 2, initial_value: "", placeholder: "Type here…" }
+                }
+                div { id: "prepared-cache", hidden: true,
+                    for chunk in state().cached.iter().filter(|chunk| chunk.voice == voice() && chunk.speed == speed()) {
+                        span { "{chunk.text}" }
+                    }
+                }
                 div { class: "send-bar",
                     button { id: "alternate-send", class: "alternate-send",
                         aria_label: if write_mode() { "Speak once" } else { "Send as text once" },

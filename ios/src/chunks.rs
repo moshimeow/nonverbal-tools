@@ -39,46 +39,9 @@ pub fn split(text: &str, voice: Voice) -> Vec<String> {
     }
     result
 }
-/// Prepare only a settled first chunk, with three non-space characters beyond it.
-/// Use the playback splitter so punctuation, decimals, and length limits agree.
-pub fn settled_prefix(text: &str, voice: Voice) -> Option<String> {
-    let text = text.trim();
-    let first = split(text, voice).into_iter().next()?;
-    let tail = text.strip_prefix(&first)?;
-    (tail.chars().filter(|c| !c.is_whitespace()).take(3).count() == 3).then_some(first)
-}
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn speculation_waits_for_stable_playback_boundary() {
-        for text in [
-            "Hello",
-            "Hello!",
-            "Hello! a",
-            "Hello! ab",
-            "A price of 3.14 pounds",
-        ] {
-            assert_eq!(settled_prefix(text, Voice::Emma), None, "{text}");
-        }
-        assert_eq!(
-            settled_prefix("Hello! abc", Voice::Emma).as_deref(),
-            Some("Hello!")
-        );
-        assert_eq!(
-            settled_prefix("Hello! abcdef", Voice::Emma).as_deref(),
-            Some("Hello!")
-        );
-        assert_eq!(
-            settled_prefix("你好！现在呢", Voice::Xiaoxiao).as_deref(),
-            Some("你好！")
-        );
-        let long = "a word ".repeat(40);
-        assert_eq!(
-            settled_prefix(&long, Voice::Emma),
-            split(&long, Voice::Emma).first().cloned()
-        );
-    }
     #[test]
     fn boundaries_preserve_words_numbers_and_unicode() {
         let s = "This costs 3.14 pounds. Are you coming? I can wait!";

@@ -166,13 +166,18 @@ context can change prosody, and playback may wait at a boundary if generation
 falls behind. The composer and sends no longer have the old 2,000-character cap.
 
 Keystrokes stay in the WebView; only empty/nonempty transitions update the Rust UI.
-After a 650 ms typing pause in Speak mode, idle inference prepares the first settled
-draft phrase without playing or recording it. Preparation requires at least three
-non-space characters after its playback boundary; an unfinished first chunk is
-generated only when sent. A four-entry, eight-megabyte RAM cache
-requires an exact phrase/voice/speed match. Submitted work takes priority over
-speculation; changed drafts invalidate in-flight preparation, and stale results
-cannot reach playback. Write mode does not prepare speech. The cache is not saved.
+Idle inference prepares the first draft phrase immediately when its playback
+boundary is detected, or after 500 ms without typing. It never plays or records
+speculative audio. A four-entry, eight-megabyte RAM cache requires an exact
+phrase/voice/speed match. Submitted work takes priority over speculation; changed
+drafts invalidate in-flight preparation, and stale results cannot reach playback.
+Write mode does not prepare speech. The cache is not saved.
+
+The menu's “Highlight prepared audio” option shows cached chunks in pale green
+behind the composer text. Highlights match complete playback chunks for the
+current voice and speed, and disappear on edits or cache eviction. This option
+is off by default and applies only to this launch. Preparation currently focuses
+on the first chunk to reduce the delay before speech starts.
 
 On this development Mac, a sample English message took 3.680 s to generate whole
 versus 0.313 s for its first phrase (four phrases total: 4.135 s for 10.9 s audio).

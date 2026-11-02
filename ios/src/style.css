@@ -57,3 +57,10 @@ nav { align-items: center; gap: 14px; position: sticky; top: env(safe-area-inset
 .mode-switch { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 8px; background: #e8e1eb; }
 .send-bar .send > svg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; }
 #conversation { touch-action: manipulation; }
+
+.composer { position: relative; background: #fffdf9; border-radius: 18px; }
+.composer textarea { position: relative; background: transparent; }
+#prepared-overlay { display: none; position: absolute; inset: 0; pointer-events: none; padding: 14px; border: 1px solid transparent; font: inherit; line-height: 1.5; white-space: pre-wrap; overflow-wrap: break-word; color: transparent; overflow: hidden; }
+.show-chunks #prepared-overlay { display: block; }
+#prepared-overlay mark { color: transparent; background: #c9e8cc; border-radius: 3px; }
+.chunk-option { display: flex; align-items: center; gap: 8px; }

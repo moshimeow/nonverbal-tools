@@ -48,6 +48,7 @@ pub struct Snapshot {
     pub history: Arc<Vec<crate::history::SentMessage>>,
     pub history_error: Option<String>,
     pub audio_error: Option<String>,
+    pub cached: Vec<Draft>,
 }
 struct Entry {
     item: Item,
@@ -191,10 +192,10 @@ impl Queue {
     }
 }
 #[derive(Clone, Debug, PartialEq)]
-struct Draft {
-    text: String,
-    voice: Voice,
-    speed: f32,
+pub struct Draft {
+    pub text: String,
+    pub voice: Voice,
+    pub speed: f32,
 }
 #[derive(Default)]
 struct AudioCache(VecDeque<(Draft, Audio)>);
@@ -236,6 +237,7 @@ enum Request {
     Replay(i64, Voice, f32),
     Draft(Option<Draft>),
     Prepared,
+    Cache(Vec<Draft>),
     Location(i64, Option<crate::history::Location>),
     Gap(i64, f64),
     Remove(u64),
@@ -299,6 +301,9 @@ impl Speaker {
                     cache.insert(job.draft.clone(), &audio);
                     Ok(audio)
                 })();
+                let _ = results.send(Request::Cache(
+                    cache.0.iter().map(|(key, _)| key.clone()).collect(),
+                ));
                 let message = if job.prepare {
                     Request::Prepared
                 } else {
@@ -340,6 +345,7 @@ impl Speaker {
             let mut draft: Option<Draft> = None;
             let mut attempted: Option<Draft> = None;
             let mut preparing = false;
+            let mut cached = Vec::new();
             loop {
                 match rx.recv_timeout(Duration::from_millis(10)) {
                     Ok(Request::Enqueue(mut item)) => {
@@ -424,6 +430,7 @@ impl Speaker {
                         draft = next;
                     }
                     Ok(Request::Prepared) => preparing = false,
+                    Ok(Request::Cache(keys)) => cached = keys,
                     Ok(Request::Location(id, location)) => {
                         if let Some(store) = history.as_mut()
                             && let Err(e) = store.set_location(id, location)
@@ -531,6 +538,7 @@ impl Speaker {
                 if let Some(store) = &history {
                     snapshot.history = store.entries.clone();
                 }
+                snapshot.cached = cached.clone();
                 snapshot.history_error = history_error.clone();
                 snapshot.audio_error = output::session_error();
                 if snapshot != last {
@@ -585,7 +593,10 @@ impl Speaker {
     }
     pub fn prepare(&self, text: &str, voice: Voice, speed: f32) {
         let draft = if validate(text, speed).is_ok() {
-            chunks::settled_prefix(text, voice).map(|text| Draft { text, voice, speed })
+            chunks::split(text, voice)
+                .into_iter()
+                .next()
+                .map(|text| Draft { text, voice, speed })
         } else {
             None
         };

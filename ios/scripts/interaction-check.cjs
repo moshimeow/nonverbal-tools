@@ -23,8 +23,9 @@ fields['write-gap-change'] = { dispatchEvent() { saved.push(this.value); } };
 const preparations = [], composerStates = [];
 fields['draft-prepare'] = { dispatchEvent() { preparations.push(this.value); } };
 fields['composer-state'] = { dispatchEvent() { composerStates.push(this.value); } };
+const browserWindow = { scrollBy(){}, addEventListener(){} };
 vm.runInNewContext(readFileSync(`${__dirname}/../src/interaction.js`, 'utf8'), {
- document, window: { scrollBy(){}, addEventListener(){} }, localStorage: { getItem:()=>null },
+ document, window: browserWindow, localStorage: { getItem:()=>null },
  performance:{now:()=>now}, scrollY:0, innerHeight:1000, Event:class{}, requestAnimationFrame:f=>f(),
  setTimeout(f,delay) { const id=++timerID; timers.set(id,{f,at:now+delay}); return id; }, clearTimeout:id=>timers.delete(id),
 });
@@ -85,3 +86,40 @@ const count = preparations.length;
 advance(700); assert.equal(preparations.length, count);
 fire('compositionend'); advance(650); assert.equal(preparations.at(-1), '你好');
 console.log('PASS: keystrokes stay local, state changes only on empty/nonempty, preparation debounce and IME');
+
+fire('compositionstart'); preparations.length = 0;
+fields.message.value = 'Hello'; fire('input', {target:fields.message});
+advance(499); assert.equal(preparations.length, 0);
+advance(1); assert.deepEqual(preparations, ['Hello']);
+fields.message.value = 'Hello!'; fire('input', {target:fields.message});
+assert.equal(preparations.at(-1), 'Hello!');
+const boundaryCount = preparations.length;
+for (const value of ['Hello! a', 'Hello! ab', 'Hello! abc']) {
+ fields.message.value=value; fire('input', {target:fields.message}); advance(30);
+}
+assert.equal(preparations.length,boundaryCount); // No per-keystroke IPC after the boundary.
+const split = (text, chinese=false) => Array.from(browserWindow.draftChunks(text,chinese), c=>c.text);
+assert.deepEqual(split('This costs 3.14 pounds. Are you coming? I can wait!'), ['This costs 3.14 pounds.', 'Are you coming?', 'I can wait!']);
+assert.deepEqual(split('你好！现在几点？我想喝水。',true), ['你好！','现在几点？','我想喝水。']);
+assert.deepEqual(split('A visit with Dr. Smith is nice.'), ['A visit with Dr. Smith is nice.']);
+assert.equal(browserWindow.draftChunks('Unfinished words',false)[0].complete,false);
+const long = 'a word and another word '.repeat(100);
+assert.ok(browserWindow.draftChunks(long,false).every(c=>Array.from(c.text).length<=160));
+assert.equal(split(long).join(' '),long.trim());
+assert.deepEqual(split('😀 Hello! next'), ['😀 Hello!', 'next']);
+// Render with text nodes, never HTML; highlights disappear for edits or evictions.
+const overlay={nodes:[],replaceChildren(){this.nodes=[];},append(node){this.nodes.push(node);}};
+fields['prepared-overlay']=overlay;
+fields.composer={dataset:{chinese:'false'},classList:{contains:()=>true}};
+fields['prepared-cache']={children:[{textContent:'Hello!'}]};
+document.createTextNode=text=>({textContent:text});
+document.createElement=tag=>({tag});
+fields.message.value='Hello! <unsafe>';
+browserWindow.paintPrepared();
+assert.equal(overlay.nodes.filter(n=>n.tag==='mark').length,1);
+assert.equal(overlay.nodes.map(n=>n.textContent).join(''),'Hello! <unsafe>\n');
+fields.message.value='Hello there!'; browserWindow.paintPrepared();
+assert.equal(overlay.nodes.filter(n=>n.tag==='mark').length,0);
+fields.message.value='Hello!'; fields['prepared-cache'].children=[]; browserWindow.paintPrepared();
+assert.equal(overlay.nodes.filter(n=>n.tag==='mark').length,0);
+console.log('PASS: 500ms idle, immediate boundaries, stable-prefix typing, English/Mandarin/Unicode chunks, exact cache highlighting and eviction');

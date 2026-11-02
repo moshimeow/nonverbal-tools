@@ -25,13 +25,67 @@ if (!window.speakInteractions) {
         field.style.height = 'auto';
         field.style.height = `${field.scrollHeight + 2}px`;
     };
-    let draftTimer, hasText = false;
+    // Mirror chunks::split for immediate boundary detection and exact cache highlighting.
+    // Offsets remain UTF-16 DOM offsets even for supplementary Unicode characters.
+    window.draftChunks = (text, chinese) => {
+        const chunks = [], limit = chinese ? 60 : 160;
+        let start = 0;
+        while (start < text.length) {
+            while (/\s/u.test(text[start] || '') && start < text.length) start++;
+            if (start >= text.length) break;
+            const rest = text.slice(start).trimEnd(), chars = Array.from(rest);
+            let end = rest.length, offset = 0, space = null, complete = false;
+            for (let n = 0; n < Math.min(limit, chars.length); n++) {
+                const c = chars[n], next = chars[n + 1];
+                if (/\s/u.test(c)) space = offset;
+                const sentence = /[?!。？！]/u.test(c) || (c === '.' && (next === undefined || /\s/u.test(next)) && n >= 12 && !rest.slice(0, offset).endsWith(' Mr') && !rest.slice(0, offset).endsWith(' Dr'));
+                const clause = n >= limit / 2 && /[,;:，；：]/u.test(c);
+                if (sentence || clause) { end = offset + c.length; complete = true; break; }
+                if (n + 1 >= limit) { end = space > 0 ? space : offset + c.length; complete = true; break; }
+                offset += c.length;
+            }
+            const phrase = rest.slice(0, end).trimEnd();
+            if (/[\p{L}\p{N}]/u.test(phrase)) chunks.push({start, end: start + phrase.length, text: phrase, complete});
+            start += end;
+        }
+        return chunks;
+    };
+    window.paintPrepared = () => {
+        const overlay = document.getElementById('prepared-overlay');
+        if (!overlay) return;
+        const field = document.getElementById('message');
+        const composer = document.getElementById('composer');
+        overlay.replaceChildren();
+        if (!composer.classList.contains('show-chunks')) return;
+        const cached = new Set(Array.from(document.getElementById('prepared-cache').children, node => node.textContent));
+        let cursor = 0;
+        for (const chunk of window.draftChunks(field.value, composer.dataset.chinese === 'true')) {
+            if (!cached.has(chunk.text)) continue;
+            overlay.append(document.createTextNode(field.value.slice(cursor, chunk.start)));
+            const mark = document.createElement('mark');
+            mark.textContent = chunk.text;
+            overlay.append(mark);
+            cursor = chunk.end;
+        }
+        overlay.append(document.createTextNode(field.value.slice(cursor) + '\n'));
+    };
+    let draftTimer, hasText = false, lastBoundary = '';
     const prepare = () => {
         const field = document.getElementById('draft-prepare');
         field.value = document.getElementById('message').value;
         field.dispatchEvent(new Event('input', { bubbles: true }));
     };
     window.prepareDraft = prepare;
+    const schedulePreparation = () => {
+        clearTimeout(draftTimer);
+        const text = document.getElementById('message').value;
+        const chinese = document.getElementById('composer')?.dataset.chinese === 'true';
+        const first = window.draftChunks(text, chinese)[0];
+        const boundary = first?.complete ? first.text : '';
+        if (!text.trim() || (boundary && boundary !== lastBoundary)) prepare();
+        else draftTimer = setTimeout(prepare, 500);
+        lastBoundary = boundary;
+    };
     document.addEventListener('input', e => {
         if (e.target.id !== 'message') return;
         // Keep keystrokes local: only empty/nonempty transitions update Rust UI state.
@@ -43,12 +97,11 @@ if (!window.speakInteractions) {
             state.value = String(hasText);
             state.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        window.resizeComposer(); clearTimeout(draftTimer);
-        if (!e.target.value.trim()) prepare();
-        else if (!e.isComposing) draftTimer = setTimeout(prepare, 650);
+        window.resizeComposer(); window.paintPrepared(); clearTimeout(draftTimer);
+        if (!e.isComposing) schedulePreparation();
     }, true);
     document.addEventListener('compositionstart', () => clearTimeout(draftTimer));
-    document.addEventListener('compositionend', () => { clearTimeout(draftTimer); draftTimer = setTimeout(prepare, 650); });
+    document.addEventListener('compositionend', schedulePreparation);
     window.addEventListener('resize', window.resizeComposer);
     let pressed, lastTap, suppressClick = false;
     const clearTap = () => { pressed = null; lastTap = null; };
