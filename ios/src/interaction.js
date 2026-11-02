@@ -108,8 +108,8 @@ if (!window.speakInteractions) {
     document.addEventListener('pointerdown', e => {
         pressed = null;
         suppressClick = false;
-        // Controls keep their normal single-tap actions; text and empty space switch mode.
-        if (e.button !== 0 || !e.isPrimary || !e.target.closest('main') || document.getElementById('conversation').hidden || e.target.closest('button, a, select, input, .spacing-handle, #settings, #history-view')) {
+        // Controls and editors keep native tap actions; transcript text and empty space switch mode.
+        if (e.button !== 0 || !e.isPrimary || !e.target.closest('main') || document.getElementById('conversation').hidden || e.target.closest('button, a, select, input, textarea, [contenteditable], .spacing-handle, #settings, #history-view')) {
             lastTap = null;
             return;
         }

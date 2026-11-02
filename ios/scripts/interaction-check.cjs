@@ -47,6 +47,14 @@ fire('pointercancel'); tap(); fire('scroll'); tap(); assert.equal(toggles,1);
 fire('pointercancel'); tap(); advance(400); tap(); assert.equal(toggles,1);
 fire('pointercancel'); tap(); fire('pointerdown',{target:{closest:s=>s==='.spacing-handle'?null:{}},button:0,isPrimary:true}); up(); tap(); assert.equal(toggles,1); // Controls break a double tap.
 fire('pointercancel');
+for (const editor of ['textarea', '[contenteditable]']) {
+ const editorTarget={closest:selector=>selector==='main'||selector.split(', ').includes(editor)?{}:null};
+ for (let n=0;n<2;n++) {
+  fire('pointerdown',{target:editorTarget,button:0,isPrimary:true,pointerId:1,clientX:10,clientY:10});
+  advance(30); assert.ok(!up().prevented); assert.ok(!fire('click').prevented);
+ }
+ assert.equal(toggles,1); // Native word selection must not switch modes.
+}
 fire('keydown',{key:'M',metaKey:true,shiftKey:true}); assert.equal(toggles,2);
 const entry={dataset:{id:'42',gap:'0'},style:{}};
 const handle={setPointerCapture(){},closest:()=>entry};

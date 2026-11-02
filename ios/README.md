@@ -6,9 +6,9 @@ The existing Python/MLX CLI remains available at the workspace root.
 
 The conversation sheet has one growing composer above the latest 25 sent messages,
 newest first. The complete archive remains available in History.
-Double-tap text or empty space on the conversation surface to switch Speak/Write. The
+Double-tap sent text or empty space on the conversation surface to switch Speak/Write. The
 send icon, playback behavior, and text size change; the draft and transcript stay
-put. The square swap button beside the menu provides an accessible mode switch. On desktop, Tab switches modes
+put. Double-tapping inside the composer keeps native word selection. The square swap button beside the menu provides an accessible mode switch. On desktop, Tab switches modes
 while keeping the composer focused; Shift–Tab navigates controls. Tab retains its
 normal behavior inside settings/History and during IME composition.
 The − / + controls adjust the current mode's size independently (defaults: Speak
