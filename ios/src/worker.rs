@@ -585,10 +585,7 @@ impl Speaker {
     }
     pub fn prepare(&self, text: &str, voice: Voice, speed: f32) {
         let draft = if validate(text, speed).is_ok() {
-            chunks::split(text, voice)
-                .into_iter()
-                .next()
-                .map(|text| Draft { text, voice, speed })
+            chunks::settled_prefix(text, voice).map(|text| Draft { text, voice, speed })
         } else {
             None
         };

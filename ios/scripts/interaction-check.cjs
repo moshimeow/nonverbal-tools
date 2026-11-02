@@ -20,7 +20,9 @@ fields.conversation = { hidden: false };
 fields.main = { dataset: { desktop: "true" } };
 fields.message = { id:'message', value:'hello', dataset:{}, style:{}, scrollHeight:900, getClientRects:()=>[1] };
 fields['write-gap-change'] = { dispatchEvent() { saved.push(this.value); } };
-fields['draft-prepare'] = { dispatchEvent() {} };
+const preparations = [], composerStates = [];
+fields['draft-prepare'] = { dispatchEvent() { preparations.push(this.value); } };
+fields['composer-state'] = { dispatchEvent() { composerStates.push(this.value); } };
 vm.runInNewContext(readFileSync(`${__dirname}/../src/interaction.js`, 'utf8'), {
  document, window: { scrollBy(){}, addEventListener(){} }, localStorage: { getItem:()=>null },
  performance:{now:()=>now}, scrollY:0, innerHeight:1000, Event:class{}, requestAnimationFrame:f=>f(),
@@ -63,3 +65,23 @@ fields.main.dataset.desktop='true';
 const settingsTarget={...fields.message,matches:()=>false,closest:()=>({})};
 assert.ok(!key({key:'Tab',target:settingsTarget}).prevented);
 console.log('PASS: Enter/IME, growing composer, double taps, spacing, desktop Tab, Shift-Tab navigation, settings focus, iPhone exclusion');
+
+advance(1000); preparations.length = 0;
+for (const value of ['h', 'he', 'hel', 'hello']) {
+ fields.message.value = value;
+ assert.ok(fire('input', {target:fields.message}).stopped);
+ advance(100);
+}
+assert.deepEqual(composerStates, ['true']);
+assert.equal(preparations.length, 0);
+advance(650); assert.deepEqual(preparations, ['hello']);
+fields.message.value = '';
+fire('input', {target:fields.message});
+assert.deepEqual(composerStates, ['true', 'false']);
+assert.equal(preparations.at(-1), '');
+fields.message.value = '你好';
+fire('compositionstart'); fire('input', {target:fields.message,isComposing:true});
+const count = preparations.length;
+advance(700); assert.equal(preparations.length, count);
+fire('compositionend'); advance(650); assert.equal(preparations.at(-1), '你好');
+console.log('PASS: keystrokes stay local, state changes only on empty/nonempty, preparation debounce and IME');

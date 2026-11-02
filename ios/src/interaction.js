@@ -25,18 +25,28 @@ if (!window.speakInteractions) {
         field.style.height = 'auto';
         field.style.height = `${field.scrollHeight + 2}px`;
     };
-    let draftTimer;
+    let draftTimer, hasText = false;
     const prepare = () => {
         const field = document.getElementById('draft-prepare');
         field.value = document.getElementById('message').value;
         field.dispatchEvent(new Event('input', { bubbles: true }));
     };
+    window.prepareDraft = prepare;
     document.addEventListener('input', e => {
         if (e.target.id !== 'message') return;
+        // Keep keystrokes local: only empty/nonempty transitions update Rust UI state.
+        e.stopImmediatePropagation();
+        const nextHasText = !!e.target.value.trim();
+        if (nextHasText !== hasText) {
+            hasText = nextHasText;
+            const state = document.getElementById('composer-state');
+            state.value = String(hasText);
+            state.dispatchEvent(new Event('input', { bubbles: true }));
+        }
         window.resizeComposer(); clearTimeout(draftTimer);
         if (!e.target.value.trim()) prepare();
         else if (!e.isComposing) draftTimer = setTimeout(prepare, 650);
-    });
+    }, true);
     document.addEventListener('compositionstart', () => clearTimeout(draftTimer));
     document.addEventListener('compositionend', () => { clearTimeout(draftTimer); draftTimer = setTimeout(prepare, 650); });
     window.addEventListener('resize', window.resizeComposer);

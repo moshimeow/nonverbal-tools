@@ -112,7 +112,7 @@ fn SendIcon(write: bool) -> Element {
 
 #[component]
 fn App() -> Element {
-    let mut text = use_signal(String::new);
+    let mut has_text = use_signal(|| false);
     let mut voice = use_signal(|| Voice::Emma);
     let mut speed = use_signal(|| 1.0f32);
     let mut menu = use_signal(|| false);
@@ -155,17 +155,10 @@ fn App() -> Element {
             }
         }
     });
-    let refresh_draft = speaker.clone();
     use_effect(move || {
-        let writing = write_mode();
-        let selected_voice = voice();
-        let selected_speed = speed();
-        let draft_text = text.peek();
-        refresh_draft.prepare(
-            if writing { "" } else { &draft_text },
-            selected_voice,
-            selected_speed,
-        );
+        // Subscribe to settings only. The WebView owns the draft while typing.
+        let _ = (write_mode(), voice(), speed());
+        document::eval("if (window.prepareDraft) window.prepareDraft();");
     });
     let send = speaker.clone();
     let alternate_send = speaker.clone();
@@ -264,22 +257,22 @@ fn App() -> Element {
             } }
             section { id: "conversation", aria_label: "Conversation", hidden: history_open(),
                 "data-mode": if write_mode() { "write" } else { "speak" }, style: "font-size: {font_size}px",
-                textarea { id: "message", aria_label: "Message", rows: 2, initial_value: "", placeholder: "Type here…",
-                    oninput: move |e| text.set(e.value()) }
+                textarea { id: "message", aria_label: "Message", rows: 2, initial_value: "", placeholder: "Type here…" }
                 div { class: "send-bar",
                     button { id: "alternate-send", class: "alternate-send",
                         aria_label: if write_mode() { "Speak once" } else { "Send as text once" },
                         title: if write_mode() { "Speak this message without changing mode" } else { "Send silently without changing mode" },
-                        disabled: text().trim().is_empty(), onclick: move |_| send_draft(alternate_send.clone(), voice(), speed(), error, !write_mode()),
+                        disabled: !has_text(), onclick: move |_| send_draft(alternate_send.clone(), voice(), speed(), error, !write_mode()),
                         SendIcon { write: !write_mode() }
                     }
                     button { id: "send", class: "send", aria_label: if write_mode() { "Send message" } else { "Speak message" },
                         title: if write_mode() { "Send message" } else { "Speak message" },
-                        disabled: text().trim().is_empty(), onclick: move |_| send_draft(send.clone(), voice(), speed(), error, write_mode()),
+                        disabled: !has_text(), onclick: move |_| send_draft(send.clone(), voice(), speed(), error, write_mode()),
                         SendIcon { write: write_mode() }
                     }
                 }
                 if !error().is_empty() { p { role: "alert", class: "error", "{error}" } }
+                input { id: "composer-state", r#type: "hidden", oninput: move |e| has_text.set(e.value() == "true") }
                 input { id: "draft-prepare", r#type: "hidden", oninput: move |e| {
                     let value = e.value();
                     prepare.prepare(if write_mode() { "" } else { &value }, voice(), speed());
@@ -288,7 +281,7 @@ fn App() -> Element {
                     if let Some((id, gap)) = e.value().split_once(':')
                         && let (Ok(id), Ok(gap)) = (id.parse::<i64>(), gap.parse::<f64>()) { spacing.set_gap(id, gap); }
                 } }
-                for item in state().history.iter().rev() {
+                for item in state().history.iter().rev().take(25) {
                     { let replay = speaker.clone(); let stop = speaker.clone();
                       let id = item.id;
                       let active = state().queue.iter().find(|q| q.history_id == Some(id)).cloned();

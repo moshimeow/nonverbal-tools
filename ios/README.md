@@ -4,7 +4,8 @@ Offline type-to-speak for iPhone, with a Rust/Dioxus UI and a Rust speech worker
 calling sherpa-onnx. Emma speaks British English; Xiaoxiao speaks Mandarin.
 The existing Python/MLX CLI remains available at the workspace root.
 
-The conversation sheet has one growing composer above newest-first sent messages.
+The conversation sheet has one growing composer above the latest 25 sent messages,
+newest first. The complete archive remains available in History.
 Double-tap text or empty space on the conversation surface to switch Speak/Write. The
 send icon, playback behavior, and text size change; the draft and transcript stay
 put. The square swap button beside the menu provides an accessible mode switch. On desktop, Tab switches modes
@@ -164,8 +165,11 @@ This is phrase streaming, not frame-by-frame streaming within the model. Shorter
 context can change prosody, and playback may wait at a boundary if generation
 falls behind. The composer and sends no longer have the old 2,000-character cap.
 
-After a 650 ms typing pause in Speak mode, idle inference prepares the first draft
-phrase without playing or recording it. A four-entry, eight-megabyte RAM cache
+Keystrokes stay in the WebView; only empty/nonempty transitions update the Rust UI.
+After a 650 ms typing pause in Speak mode, idle inference prepares the first settled
+draft phrase without playing or recording it. Preparation requires at least three
+non-space characters after its playback boundary; an unfinished first chunk is
+generated only when sent. A four-entry, eight-megabyte RAM cache
 requires an exact phrase/voice/speed match. Submitted work takes priority over
 speculation; changed drafts invalidate in-flight preparation, and stale results
 cannot reach playback. Write mode does not prepare speech. The cache is not saved.
