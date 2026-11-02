@@ -228,3 +228,14 @@ On-device acceptance check for this simplified implementation:
 Builds and desktop tests do not establish iPhone routing behavior. After the
 simplified implementation was installed, the user confirmed that it worked on
 their iPhone and approved merging it on 2026-10-25.
+
+### Renewing a personal development installation
+
+Free Personal Team profiles expire after seven days. Re-sign and install over the
+existing app with the same bundle identifier; do not uninstall it, since that
+removes local history. If Finder trusts the phone but Xcode says it is offline,
+check VPNs: Mullvad on the phone blocked the developer USB network connection in
+our November 1 refresh. Keep the phone unlocked through installation. If the new
+installation is rejected at launch, check Settings → General → VPN & Device
+Management for the developer's Trust / Verify App action. The November 1 refresh
+installed successfully and the user confirmed that Trust restored access.
