@@ -38,3 +38,13 @@ bool speak_copy_text(const char *text) {
         return success;
     }
 }
+
+// App-scoped preference, set before AppKit/WebKit creates the text input view.
+// Do not change the user's global keyboard behavior or IME configuration.
+void speak_configure_input(void) {
+#if !TARGET_OS_IOS
+    @autoreleasepool {
+        [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"ApplePressAndHoldEnabled"];
+    }
+#endif
+}

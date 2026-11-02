@@ -48,3 +48,8 @@ nav { align-items: center; gap: 14px; position: sticky; top: env(safe-area-inset
 .message-actions { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 13px; color: #796987; }
 .message-speak { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: #796987; width: 44px; font-size: 20px; }
 .write-entry .error { font-size: 13px; margin: 0 0 8px; }
+
+.send-bar { display: flex; margin-top: 10px; gap: 1px; }
+.send-bar .send { margin: 0; flex: 1; border-radius: 0 14px 14px 0; }
+.alternate-send { display: flex; align-items: center; justify-content: center; flex: 0 0 44px; border-radius: 14px 0 0 14px; background: #d6cadd; color: #53425f; }
+.alternate-send svg { width: 18px; height: 18px; }

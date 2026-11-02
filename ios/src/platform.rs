@@ -4,8 +4,14 @@ use std::{
     path::PathBuf,
 };
 unsafe extern "C" {
+    fn speak_configure_input();
     fn speak_data_directory() -> *const c_char;
     fn speak_copy_text(text: *const c_char) -> bool;
+}
+pub fn configure_input() {
+    unsafe {
+        speak_configure_input();
+    }
 }
 pub fn data_directory() -> Result<PathBuf> {
     // Tests and CLI checks use an isolated directory, never the user's transcript.

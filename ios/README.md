@@ -7,10 +7,14 @@ The existing Python/MLX CLI remains available at the workspace root.
 The conversation sheet has one growing composer above newest-first sent messages.
 Hold anywhere on the conversation surface for 550 ms to switch Speak/Write. The
 send icon, playback behavior, and text size change; the draft and transcript stay
-put. The menu provides an accessible mode switch, and Control–Shift–M also works.
+put. The menu provides an accessible mode switch. On desktop, Tab switches modes
+while keeping the composer focused; Shift–Tab navigates controls. Tab retains its
+normal behavior inside settings/History and during IME composition.
 The − / + controls adjust the current mode's size independently (defaults: Speak
 20 px, Write 36 px); mode and both sizes persist locally. Language, voice, speed,
-and copyable History live in ☰.
+and copyable History live in ☰. The small left segment of Send submits once in the
+opposite modality without changing mode. macOS disables press-and-hold accents
+for this app only; letter repeats use the system's repeat delay/rate.
 
 Speak sends enter a FIFO audio queue; Write sends remain silent. Each saved message
 has a speaker button to play it using the current voice/speed, or a Stop button
@@ -23,7 +27,8 @@ above it. All sent messages and spacing survive restart.
 Nothing is sent to a server. Dioxus renders the Rust UI in the platform WebView;
 inference and audio playback are native. English uses a Misaki-style Rust
 phonemizer with an embedded neural fallback for names, typos, and invented words.
-Mandarin uses the bilingual model's Chinese lexicon and number normalization.
+Mandarin uses Jieba word segmentation and the bilingual model's Chinese lexicon,
+with explicit phoneme input and common numeric-form normalization.
 English words containing only uppercase ASCII letters (at least two) are spelled
 out using British letter names: `NASA`, `CPU`, `API`, and even `HELLO`. Single `I`
 and `A` stay normal words. A question mark, including `？`, ends an English synthesis
@@ -274,3 +279,36 @@ our November 1 refresh. Keep the phone unlocked through installation. If the new
 installation is rejected at launch, check Settings → General → VPN & Device
 Management for the developer's Trust / Verify App action. The November 1 refresh
 installed successfully and the user confirmed that Trust restored access.
+
+### Mandarin frontend correction
+
+The sherpa-onnx 2.0.0 lexicon path constructs an end-PAD-terminated token sequence,
+then appends trailing punctuation after that PAD. It also concatenates lexicon
+pronunciations without the word spaces used by Kokoro's Python frontend. The
+Mandarin frontend now supplies explicit IPA via `phoneme_codepoints`, as English
+already does, preserving word boundaries and letting sherpa frame the sequence
+once. The exact reported question produced 1.665 s through the old path versus
+1.460 s with Python-reference phonemes. This confirms different model input and
+audio; subjective tone quality still requires listening.
+
+The pinned MIT-licensed `jieba-rs` 0.11.0 uses the already-bundled dictionary.
+The frontend preserves lexical tones and common numeric forms (cardinals, years,
+decimals, percentages, clock times, digit strings). It is not a comprehensive
+Chinese text normalizer or tone-sandhi implementation. Unknown Han characters
+report a pronunciation error instead of silently disappearing. Original written
+text, including 调 rather than 跳 in the regression sample, stays unchanged.
+Kokoro v1.0 itself has limited Mandarin training, so fixing token framing does
+not establish native-quality tones. See the upstream
+[voice-quality notes](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md)
+and [lexicon/token framing implementation](https://github.com/k2-fsa/sherpa-onnx/blob/v2.0.0/sherpa-onnx/csrc/offline-tts-kokoro-impl.h).
+
+Reproduce old versus corrected whole/chunked speech without touching history:
+
+```sh
+cargo run --locked --release --manifest-path ios/Cargo.toml --bin mandarin-check -- \
+  ios/tests/mandarin-cases.tsv /tmp/speak-mandarin-comparison
+```
+
+The emitted numbered WAV files correspond to fixture rows. Desktop key repeat
+and iPhone speech quality are manual acceptance checks; automated tests do not
+steal keyboard focus from the user.

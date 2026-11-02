@@ -24,6 +24,7 @@ fn main() -> anyhow::Result<()> {
             Voice::Emma,
             "Henlo! This blorptastic floof wants to zorbulate.",
         ),
+        (Voice::Xiaoxiao, "你好,你怎么样了? 你看,小猫从椅子调到地上."),
         (
             Voice::Xiaoxiao,
             "你好！我现在可以用中文说话了。现在是下午三点。",

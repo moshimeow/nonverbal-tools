@@ -6,7 +6,8 @@ const handlers = {}, fields = {}, sends = [], saved = [], timers = new Map();
 let now = 1000, timerID = 0, toggles = 0;
 const document = {
  addEventListener(n, f) { (handlers[n] ??= []).push(f); },
- getElementById(id) { return fields[id]; }
+ getElementById(id) { return fields[id]; },
+ querySelector() { return fields.main; }
 };
 function fire(name, props = {}) {
  const e = { target: { matches: () => false, closest: () => null }, preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...props };
@@ -16,6 +17,7 @@ function fire(name, props = {}) {
 fields.send = { click: () => sends.push('send') };
 fields['mode-toggle'] = { click() { const e = fire('click'); if (!e.prevented) toggles++; } };
 fields.conversation = { hidden: false };
+fields.main = { dataset: { desktop: "true" } };
 fields.message = { id:'message', value:'hello', dataset:{}, style:{}, scrollHeight:900, getClientRects:()=>[1] };
 fields['write-gap-change'] = { dispatchEvent() { saved.push(this.value); } };
 fields['draft-prepare'] = { dispatchEvent() {} };
@@ -25,7 +27,7 @@ vm.runInNewContext(readFileSync(`${__dirname}/../src/interaction.js`, 'utf8'), {
  setTimeout(f,delay) { const id=++timerID; timers.set(id,{f,at:now+delay}); return id; }, clearTimeout:id=>timers.delete(id),
 });
 function advance(ms) { now+=ms; for(const [id,t] of [...timers]) if(t.at<=now){ timers.delete(id); t.f(); } }
-function key(props={}) { return fire('keydown',{target:{...fields.message,matches:()=>false},key:'Enter',...props}); }
+function key(props={}) { return fire('keydown',{target:{...fields.message,matches:()=>false,closest:()=>null},key:'Enter',...props}); }
 assert.ok(key().prevented); assert.ok(key({shiftKey:true}).prevented); assert.equal(sends.length,2);
 key({isComposing:true}); key({keyCode:229}); fire('compositionend'); key(); assert.equal(sends.length,2);
 advance(100); key(); key({repeat:true}); assert.equal(sends.length,3);
@@ -44,4 +46,13 @@ assert.equal(entry.style.paddingTop,'300px'); assert.deepEqual(saved,['42:300'])
 fire('pointerdown',{target:{closest:s=>s==='.spacing-handle'?handle:null},pointerId:4,clientY:400});
 fire('pointermove',{pointerId:4,clientY:200}); fire('pointercancel');
 assert.equal(entry.style.paddingTop,'300px'); assert.deepEqual(saved,['42:300']);
-console.log('PASS: Enter/IME, growing composer, hold toggle, click suppression, scroll cancellation, keyboard shortcut, spacing');
+const beforeTab = toggles;
+assert.ok(key({key:'Tab'}).prevented); assert.equal(toggles, beforeTab+1);
+key({key:'Tab',repeat:true}); assert.equal(toggles,beforeTab+1);
+assert.ok(!key({key:'Tab',shiftKey:true}).prevented);
+assert.ok(!key({key:'Tab',isComposing:true}).prevented);
+fields.main.dataset.desktop='false'; assert.ok(!key({key:'Tab'}).prevented);
+fields.main.dataset.desktop='true';
+const settingsTarget={...fields.message,matches:()=>false,closest:()=>({})};
+assert.ok(!key({key:'Tab',target:settingsTarget}).prevented);
+console.log('PASS: Enter/IME, growing composer, holds, spacing, desktop Tab, Shift-Tab navigation, settings focus, iPhone exclusion');

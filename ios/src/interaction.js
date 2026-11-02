@@ -3,6 +3,12 @@ if (!window.speakInteractions) {
     let compositionEnded = 0;
     document.addEventListener('compositionend', () => compositionEnded = performance.now());
     document.addEventListener('keydown', e => {
+        if (performance.now() - compositionEnded < 50 || e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || e.keyCode === 229) return;
+        if (document.querySelector('main')?.dataset.desktop !== 'true' || document.getElementById('conversation').hidden || e.target.closest('#settings, #history-view')) return;
+        e.preventDefault();
+        if (!e.repeat) document.getElementById('mode-toggle').click();
+    }, true);
+    document.addEventListener('keydown', e => {
         const id = e.target.id;
         if (id !== 'message' || e.key !== 'Enter') return;
         if (e.isComposing || e.keyCode === 229) return;

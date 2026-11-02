@@ -15,6 +15,7 @@ use std::{
 
 mod frontend;
 pub mod history;
+mod mandarin;
 pub mod platform;
 pub mod worker;
 
@@ -59,6 +60,7 @@ pub fn model_dir() -> PathBuf {
 pub struct SpeechEngine {
     tts: OfflineTts,
     english: frontend::English,
+    mandarin: mandarin::Mandarin,
 }
 
 #[derive(Clone)]
@@ -111,6 +113,7 @@ impl SpeechEngine {
         Ok(Self {
             tts,
             english: frontend::English::new()?,
+            mandarin: mandarin::Mandarin::load(dir)?,
         })
     }
 
@@ -128,7 +131,10 @@ impl SpeechEngine {
         }
         let config = GenerationConfig {
             sid: voice.speaker_id(),
-            phoneme_codepoints: (voice == Voice::Emma).then(|| self.english.phonemes(text)),
+            phoneme_codepoints: Some(match voice {
+                Voice::Emma => self.english.phonemes(text),
+                Voice::Xiaoxiao => self.mandarin.phonemes(text, &self.english)?,
+            }),
             speed,
             ..Default::default()
         };

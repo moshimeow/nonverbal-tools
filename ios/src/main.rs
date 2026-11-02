@@ -6,6 +6,7 @@ use speak_pocket::{
 use std::{cell::RefCell, rc::Rc};
 
 fn main() {
+    speak_pocket::platform::configure_input();
     if std::env::args().any(|a| a == "--speech-check") {
         std::thread::spawn(|| {
             let result = (|| -> anyhow::Result<()> {
@@ -99,6 +100,17 @@ fn ViewIcon(kind: u8) -> Element {
 }
 
 #[component]
+fn SendIcon(write: bool) -> Element {
+    if write {
+        rsx! {
+            svg { width: "24", height: "24", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round", "aria-hidden": "true", path { d: "M12 20V4m-7 7 7-7 7 7" } }
+        }
+    } else {
+        rsx! { ViewIcon { kind: 0 } }
+    }
+}
+
+#[component]
 fn App() -> Element {
     let mut text = use_signal(String::new);
     let mut voice = use_signal(|| Voice::Emma);
@@ -156,6 +168,7 @@ fn App() -> Element {
         );
     });
     let send = speaker.clone();
+    let alternate_send = speaker.clone();
     let prepare = speaker.clone();
     let spacing = speaker.clone();
     let chinese = voice() == Voice::Xiaoxiao;
@@ -163,7 +176,7 @@ fn App() -> Element {
         document::Title { "Speak Pocket" }
         document::Meta { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" }
         style { {include_str!("style.css")} }
-        main {
+        main { "data-desktop": (!cfg!(target_os = "ios")).to_string(),
             nav {
                 button { class: "menu-toggle", aria_label: "Menu", aria_expanded: menu().to_string(), aria_controls: "settings",
                     onclick: move |_| menu.toggle(), if menu() { "×" } else { "☰" } }
@@ -185,7 +198,7 @@ fn App() -> Element {
                     button { class: "copy", onclick: move |_| { write_mode.toggle(); menu.set(false); },
                         if write_mode() { "Switch to speaking" } else { "Switch to writing" }
                     }
-                    small { "Hold anywhere in the conversation to switch. Control–Shift–M also works." }
+                    small { "Hold anywhere in the conversation to switch. Desktop: Tab switches mode; Shift–Tab navigates controls." }
                     label { r#for: "language", "Language" }
                     select { id: "language", value: if chinese { "zh" } else { "en" },
                         onchange: move |e| voice.set(if e.value() == "zh" { Voice::Xiaoxiao } else { Voice::Emma }),
@@ -249,12 +262,18 @@ fn App() -> Element {
                 "data-mode": if write_mode() { "write" } else { "speak" }, style: "font-size: {font_size}px",
                 textarea { id: "message", aria_label: "Message", rows: 2, initial_value: "", placeholder: "Type here…",
                     oninput: move |e| text.set(e.value()) }
-                button { id: "send", class: "send", aria_label: if write_mode() { "Send message" } else { "Speak message" },
-                    title: if write_mode() { "Send message · hold to switch mode" } else { "Speak message · hold to switch mode" },
-                    disabled: text().trim().is_empty(), onclick: move |_| send_draft(send.clone(), voice(), speed(), error, write_mode()),
-                    if write_mode() {
-                        svg { width: "24", height: "24", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round", "aria-hidden": "true", path { d: "M12 20V4m-7 7 7-7 7 7" } }
-                    } else { ViewIcon { kind: 0 } }
+                div { class: "send-bar",
+                    button { id: "alternate-send", class: "alternate-send",
+                        aria_label: if write_mode() { "Speak once" } else { "Send as text once" },
+                        title: if write_mode() { "Speak this message without changing mode" } else { "Send silently without changing mode" },
+                        disabled: text().trim().is_empty(), onclick: move |_| send_draft(alternate_send.clone(), voice(), speed(), error, !write_mode()),
+                        SendIcon { write: !write_mode() }
+                    }
+                    button { id: "send", class: "send", aria_label: if write_mode() { "Send message" } else { "Speak message" },
+                        title: if write_mode() { "Send message · hold to switch mode" } else { "Speak message · hold to switch mode" },
+                        disabled: text().trim().is_empty(), onclick: move |_| send_draft(send.clone(), voice(), speed(), error, write_mode()),
+                        SendIcon { write: write_mode() }
+                    }
                 }
                 if !error().is_empty() { p { role: "alert", class: "error", "{error}" } }
                 input { id: "draft-prepare", r#type: "hidden", oninput: move |e| {
