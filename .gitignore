@@ -3,6 +3,10 @@ __pycache__/
 *.pyc
 .DS_Store
 .tools/
+keyboard/build/
+keyboard/**/xcuserdata/
+/signal-2026-10-17-19-56-36-002.mp4
+transcriptions/
 ios/target/
 ios/assets/kokoro-*/
 ios/dist/
